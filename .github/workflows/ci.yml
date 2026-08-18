@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Un push nuevo sobre la misma rama cancela el run anterior: no tiene sentido
+# gastar minutos validando un commit ya superado.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # pyproject declara >=3.10, así que hay que probarlo en todas. Hasta ahora solo
+      # se ejecutaba en 3.10 en local.
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instalar
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Tests
+        run: python -m pytest -q --cov=wacloud --cov-report=term-missing
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instalar
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Formato
+        run: python -m ruff format --check .
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Tipos
+        run: python -m mypy wacloud/
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Construir el paquete
+        run: python -m pip install build && python -m build
+
+      - name: Comprobar que py.typed va en el wheel
+        # Sin py.typed el host pierde todos los tipos, y el fallo es silencioso.
+        run: python -c "
+          import zipfile, glob, sys;
+          wheel = glob.glob('dist/*.whl')[0];
+          names = zipfile.ZipFile(wheel).namelist();
+          sys.exit(0 if 'wacloud/py.typed' in names else 'py.typed no está en el wheel')
+          "
