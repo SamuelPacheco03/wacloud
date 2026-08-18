@@ -4,9 +4,11 @@ Flujo de la Cloud API: el webhook trae un ``media_id`` → se consulta
 ``GET /{media_id}`` para obtener una URL temporal → se descargan los bytes de esa
 URL (con el token del número). Aquí no se almacena nada: eso lo hace ``ingest``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from wacloud.transport import Transport
 
@@ -25,7 +27,7 @@ async def resolve_media_url(
     *,
     access_token: str,
     phone_number_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Devuelve la metadata de Meta para ``media_id`` (incluye ``url``, ``mime_type``,
     ``sha256``, ``file_size``)."""
     media_id = (media_id or "").strip()

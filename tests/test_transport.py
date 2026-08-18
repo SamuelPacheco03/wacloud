@@ -1,21 +1,16 @@
 """Tests del transporte con httpx.MockTransport (sin red real)."""
+
 import httpx
 import pytest
 
+from tests.factories import make_transport
 from wacloud.config import GraphConfig
 from wacloud.errors import WaInvalidRequest, WaRateLimited, WaServerError
 from wacloud.transport import Transport
 
 
-def _transport_with(handler, **config_overrides) -> Transport:
-    # backoff a 0 para que los tests no esperen.
-    config = GraphConfig(
-        backoff_base_seconds=0.0,
-        backoff_max_seconds=0.0,
-        **config_overrides,
-    )
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return Transport(config, client=client)
+def _transport_with(handler, *, max_retries: int = 0) -> Transport:
+    return make_transport(handler, max_retries=max_retries)
 
 
 async def test_success_returns_json():
@@ -88,10 +83,7 @@ async def test_graph_url_built_with_version():
     config = GraphConfig(
         base_url="https://graph.facebook.com",
         api_version="v20.0",
-        backoff_base_seconds=0.0,
-        backoff_max_seconds=0.0,
     )
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    t = Transport(config, client=client)
+    t = make_transport(handler, config=config)
     await t.request("POST", "/123/messages", access_token="tok")
     assert captured["url"] == "https://graph.facebook.com/v20.0/123/messages"

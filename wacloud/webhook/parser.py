@@ -1,134 +1,132 @@
-"""Parser del payload crudo del webhook de Meta → eventos normalizados.
+"""Recorrido del payload del webhook y construcción de los eventos.
 
-Convierte la estructura ``entry[].changes[].value`` de la Cloud API en dos listas
-tipadas: mensajes entrantes y actualizaciones de estado. Para medios, **no**
-resuelve la URL: expone el ``media_id`` (+ mime/filename) para que el host lo
-ingiera con su token (ver ``wacloud.media.ingest``).
+Meta anida los datos en ``entry[].changes[].value``. Aquí se atraviesa esa estructura
+una sola vez y se delega en ``extract`` la interpretación de cada campo.
+
+Referencia:
+https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Iterator
 from typing import Any
 
-_MEDIA_TYPES = ("image", "audio", "video", "document", "sticker")
+from wacloud.webhook.events import (
+    InboundInteractive,
+    InboundLocation,
+    InboundMedia,
+    InboundReaction,
+    WebhookEvents,
+    WebhookInboundMessage,
+    WebhookStatus,
+)
+from wacloud.webhook.extract import (
+    as_dict,
+    clean_str,
+    dict_list,
+    extract_interactive,
+    extract_media,
+    extract_replied_to,
+    extract_shared_contacts,
+    extract_text,
+)
+from wacloud.webhook.extract import (
+    extract_location as _location,
+)
+from wacloud.webhook.extract import (
+    extract_reaction as _reaction,
+)
+
+# -- Construcción de eventos ------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class WebhookInboundMessage:
-    phone_number_id: str
-    from_user: str
-    message_id: str | None
-    type: str
-    text: str
-    raw: dict[str, Any]
-    contacts: list[dict[str, Any]] = field(default_factory=list)
-    waba_id: str | None = None
-    timestamp: str | None = None
-    media_id: str | None = None
-    mime_type: str | None = None
-    filename: str | None = None
-
-
-@dataclass(frozen=True)
-class WebhookStatus:
-    phone_number_id: str | None
-    message_id: str
-    status: str
-    raw: dict[str, Any]
-    recipient_id: str | None = None
-    failure_reason: str | None = None
-
-
-@dataclass(frozen=True)
-class WebhookEvents:
-    messages: list[WebhookInboundMessage] = field(default_factory=list)
-    statuses: list[WebhookStatus] = field(default_factory=list)
-
-
-def _clean(value: Any) -> str | None:
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return None
-
-
-def _extract_text_and_media(
-    message: dict[str, Any], msg_type: str
-) -> tuple[str, str | None, str | None, str | None]:
-    """Devuelve (text, media_id, mime_type, filename) según el tipo."""
-    typed = message.get(msg_type)
-
-    if msg_type == "text" and isinstance(typed, dict):
-        return _clean(typed.get("body")) or "", None, None, None
-
-    if msg_type == "interactive" and isinstance(typed, dict):
-        inner = typed.get(typed.get("type", ""), {})
-        if isinstance(inner, dict):
-            return _clean(inner.get("title")) or _clean(inner.get("id")) or "", None, None, None
-
-    if msg_type == "button" and isinstance(typed, dict):
-        return _clean(typed.get("text")) or "", None, None, None
-
-    if msg_type in _MEDIA_TYPES and isinstance(typed, dict):
-        text = _clean(typed.get("caption")) or f"[{msg_type} recibido]"
-        return (
-            text,
-            _clean(typed.get("id")),
-            _clean(typed.get("mime_type")),
-            _clean(typed.get("filename")),
-        )
-
-    return f"[{msg_type} recibido]", None, None, None
-
-
-def _inbound(
+def _build_message(
     message: dict[str, Any],
     *,
     phone_number_id: str,
     waba_id: str | None,
     contacts: list[dict[str, Any]],
 ) -> WebhookInboundMessage | None:
-    from_user = _clean(message.get("from"))
+    from_user = clean_str(message.get("from"))
     if not from_user:
         return None
-    msg_type = _clean(message.get("type")) or "unknown"
-    text, media_id, mime_type, filename = _extract_text_and_media(message, msg_type)
+    msg_type = clean_str(message.get("type")) or "unknown"
     return WebhookInboundMessage(
         phone_number_id=phone_number_id,
         from_user=from_user,
-        message_id=_clean(message.get("id")),
+        message_id=clean_str(message.get("id")),
         type=msg_type,
-        text=text,
+        text=extract_text(message, msg_type),
         raw=message,
         contacts=contacts,
         waba_id=waba_id,
-        timestamp=_clean(message.get("timestamp")),
-        media_id=media_id,
-        mime_type=mime_type,
-        filename=filename,
+        timestamp=clean_str(message.get("timestamp")),
+        media=extract_media(message, msg_type),
+        replied_to=extract_replied_to(message),
+        location=_location(message, msg_type),
+        reaction=_reaction(message, msg_type),
+        interactive=extract_interactive(message, msg_type),
+        shared_contacts=extract_shared_contacts(message, msg_type),
     )
 
 
-def _status(status: dict[str, Any], *, phone_number_id: str | None) -> WebhookStatus | None:
-    message_id = _clean(status.get("id"))
-    state = _clean(status.get("status"))
+def _first_error(status: dict[str, Any]) -> tuple[str | None, int | None]:
+    """Motivo y código del primer error, cuando el estado es ``failed``."""
+    errors = dict_list(status.get("errors"))
+    if not errors:
+        return None, None
+    first = errors[0]
+    details = as_dict(first.get("error_data"))
+    reason = (
+        (clean_str(details.get("details")) if details else None)
+        or clean_str(first.get("title"))
+        or clean_str(first.get("message"))
+    )
+    code = first.get("code")
+    return reason, code if isinstance(code, int) and not isinstance(code, bool) else None
+
+
+def _build_status(
+    status: dict[str, Any], *, phone_number_id: str | None
+) -> WebhookStatus | None:
+    message_id = clean_str(status.get("id"))
+    state = clean_str(status.get("status"))
     if not message_id or not state:
         return None
-    errors = status.get("errors")
-    failure_reason = None
-    if isinstance(errors, list) and errors:
-        first = errors[0]
-        if isinstance(first, dict):
-            failure_reason = _clean(first.get("title")) or _clean(first.get("message")) or str(first)
-        else:
-            failure_reason = str(first)
+
+    reason, code = _first_error(status)
+    pricing = as_dict(status.get("pricing"))
     return WebhookStatus(
         phone_number_id=phone_number_id,
         message_id=message_id,
         status=state.lower(),
         raw=status,
-        recipient_id=_clean(status.get("recipient_id")),
-        failure_reason=failure_reason,
+        recipient_id=clean_str(status.get("recipient_id")),
+        failure_reason=reason,
+        error_code=code,
+        pricing_category=clean_str(pricing.get("category")) if pricing else None,
+        callback_data=clean_str(status.get("biz_opaque_callback_data")),
     )
+
+
+# -- Recorrido del payload --------------------------------------------------------
+
+
+def _iter_change_values(
+    payload: dict[str, Any],
+) -> Iterator[tuple[dict[str, Any], str | None]]:
+    """Recorre ``entry[].changes[].value`` devolviendo cada valor con su ``waba_id``.
+
+    Aislar el recorrido de la interpretación mantiene ``parse_webhook`` plano: la
+    estructura anidada de Meta se atraviesa en un sitio y una sola vez.
+    """
+    for entry in dict_list(payload.get("entry")):
+        waba_id = clean_str(entry.get("id"))
+        for change in dict_list(entry.get("changes")):
+            value = as_dict(change.get("value"))
+            if value is not None:
+                yield value, waba_id
 
 
 def parse_webhook(payload: dict[str, Any]) -> WebhookEvents:
@@ -136,60 +134,53 @@ def parse_webhook(payload: dict[str, Any]) -> WebhookEvents:
     messages: list[WebhookInboundMessage] = []
     statuses: list[WebhookStatus] = []
 
-    entries = payload.get("entry")
-    if not isinstance(entries, list):
-        return WebhookEvents(messages, statuses)
+    for value, waba_id in _iter_change_values(payload):
+        metadata = as_dict(value.get("metadata"))
+        phone_number_id = clean_str(metadata.get("phone_number_id")) if metadata else None
+        contacts = dict_list(value.get("contacts"))
 
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        waba_id = _clean(entry.get("id"))
-        changes = entry.get("changes")
-        if not isinstance(changes, list):
-            continue
-        for change in changes:
-            value = change.get("value") if isinstance(change, dict) else None
-            if not isinstance(value, dict):
-                continue
-            metadata = value.get("metadata")
-            phone_number_id = _clean(metadata.get("phone_number_id")) if isinstance(metadata, dict) else None
-            contacts = value.get("contacts")
-            contacts = [c for c in contacts if isinstance(c, dict)] if isinstance(contacts, list) else []
+        if phone_number_id:
+            for message in dict_list(value.get("messages")):
+                parsed = _build_message(
+                    message,
+                    phone_number_id=phone_number_id,
+                    waba_id=waba_id,
+                    contacts=contacts,
+                )
+                if parsed:
+                    messages.append(parsed)
 
-            if phone_number_id:
-                for message in value.get("messages") or []:
-                    if isinstance(message, dict):
-                        parsed = _inbound(
-                            message,
-                            phone_number_id=phone_number_id,
-                            waba_id=waba_id,
-                            contacts=contacts,
-                        )
-                        if parsed:
-                            messages.append(parsed)
-
-            for status in value.get("statuses") or []:
-                if isinstance(status, dict):
-                    parsed = _status(status, phone_number_id=phone_number_id)
-                    if parsed:
-                        statuses.append(parsed)
+        for status in dict_list(value.get("statuses")):
+            parsed_status = _build_status(status, phone_number_id=phone_number_id)
+            if parsed_status:
+                statuses.append(parsed_status)
 
     return WebhookEvents(messages, statuses)
 
 
 def first_phone_number_id(payload: dict[str, Any]) -> str | None:
-    """Atajo para resolver el ``phone_number_id`` antes de verificar la firma."""
-    entries = payload.get("entry")
-    if not isinstance(entries, list):
-        return None
-    for entry in entries:
-        changes = entry.get("changes") if isinstance(entry, dict) else None
-        if not isinstance(changes, list):
-            continue
-        for change in changes:
-            value = change.get("value") if isinstance(change, dict) else None
-            metadata = value.get("metadata") if isinstance(value, dict) else None
-            pnid = _clean(metadata.get("phone_number_id")) if isinstance(metadata, dict) else None
-            if pnid:
-                return pnid
+    """Resuelve el ``phone_number_id`` antes de verificar la firma.
+
+    El host lo necesita para saber qué ``app_secret`` usar, y eso ocurre antes de poder
+    confiar en el contenido del payload.
+    """
+    for value, _ in _iter_change_values(payload):
+        metadata = as_dict(value.get("metadata"))
+        pnid = clean_str(metadata.get("phone_number_id")) if metadata else None
+        if pnid:
+            return pnid
     return None
+
+
+#: Reexportados para que ``from wacloud.webhook.parser import ...`` siga funcionando.
+__all__ = [
+    "InboundInteractive",
+    "InboundLocation",
+    "InboundMedia",
+    "InboundReaction",
+    "WebhookEvents",
+    "WebhookInboundMessage",
+    "WebhookStatus",
+    "first_phone_number_id",
+    "parse_webhook",
+]

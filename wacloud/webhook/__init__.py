@@ -1,19 +1,33 @@
-"""Webhook entrante: verificación de firma + parser del payload crudo de Meta."""
+"""Webhook entrante: verificación de suscripción y firma + parser del payload."""
+
 from wacloud.webhook.parser import (
+    InboundInteractive,
+    InboundLocation,
+    InboundMedia,
+    InboundReaction,
     WebhookEvents,
     WebhookInboundMessage,
     WebhookStatus,
     first_phone_number_id,
     parse_webhook,
 )
-from wacloud.webhook.verify import compute_signature, verify_signature
+from wacloud.webhook.verify import (
+    compute_signature,
+    verify_signature,
+    verify_subscription,
+)
 
 __all__ = [
-    "verify_signature",
-    "compute_signature",
-    "parse_webhook",
-    "first_phone_number_id",
     "WebhookEvents",
     "WebhookInboundMessage",
     "WebhookStatus",
+    "InboundInteractive",
+    "InboundLocation",
+    "InboundMedia",
+    "InboundReaction",
+    "compute_signature",
+    "first_phone_number_id",
+    "parse_webhook",
+    "verify_signature",
+    "verify_subscription",
 ]
