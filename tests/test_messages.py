@@ -1,12 +1,10 @@
 """Tests del módulo messages: builders puros + MessagesClient con MockTransport."""
+
 import httpx
 import pytest
 
-from wacloud.config import GraphConfig
-from wacloud.credentials import StaticCredentialResolver, WaCredentials
+from tests.factories import make_messages_client, make_transport
 from wacloud.messages import MessagesClient, builders
-from wacloud.transport import Transport
-
 
 # --- Builders (puros, sin red) ---------------------------------------------
 
@@ -50,14 +48,33 @@ def test_media_requires_link_or_id():
         builders.build_image("573000000000")
 
 
-def test_build_interactive_buttons_caps_to_three_and_truncates_title():
-    buttons = [
-        {"id": f"b{i}", "title": "x" * 30} for i in range(5)
-    ]
-    payload = builders.build_interactive_buttons("573000000000", "elige", buttons)
+def test_build_interactive_buttons_rejects_more_than_three():
+    """Meta acepta 3 botones: truncar en silencio enviaría algo que el host no pidió."""
+    buttons = [{"id": f"b{i}", "title": f"t{i}"} for i in range(5)]
+    with pytest.raises(ValueError, match="máximo 3"):
+        builders.build_interactive_buttons("573000000000", "elige", buttons)
+
+
+def test_build_interactive_buttons_rejects_long_title():
+    buttons = [{"id": "b0", "title": "x" * 30}]
+    with pytest.raises(ValueError, match="máximo 20"):
+        builders.build_interactive_buttons("573000000000", "elige", buttons)
+
+
+def test_build_interactive_buttons_rejects_duplicate_titles():
+    buttons = [{"id": "a", "title": "Igual"}, {"id": "b", "title": "Igual"}]
+    with pytest.raises(ValueError, match="únicos"):
+        builders.build_interactive_buttons("573000000000", "elige", buttons)
+
+
+def test_build_interactive_buttons_accepts_valid_input():
+    buttons = [{"id": "si", "title": "Sí"}, {"id": "no", "title": "No"}]
+    payload = builders.build_interactive_buttons(
+        "573000000000", "elige", buttons, footer="pie"
+    )
     action = payload["interactive"]["action"]["buttons"]
-    assert len(action) == 3
-    assert action[0]["reply"]["title"] == "x" * 20
+    assert [b["reply"]["id"] for b in action] == ["si", "no"]
+    assert payload["interactive"]["footer"] == {"text": "pie"}
 
 
 def test_build_mark_read_with_typing():
@@ -74,13 +91,7 @@ def test_build_mark_read_with_typing():
 
 
 def _client(handler) -> MessagesClient:
-    config = GraphConfig(backoff_base_seconds=0.0, backoff_max_seconds=0.0)
-    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    transport = Transport(config, client=http)
-    resolver = StaticCredentialResolver(
-        WaCredentials(phone_number_id="PNID", access_token="tok")
-    )
-    return MessagesClient(transport, resolver, config=config)
+    return make_messages_client(handler)
 
 
 async def test_send_text_returns_message_id():
@@ -135,11 +146,8 @@ async def test_send_batch_all_fail_when_credentials_missing():
         async def for_waba_id(self, waba_id):  # pragma: no cover
             raise NotImplementedError
 
-    config = GraphConfig(backoff_base_seconds=0.0, backoff_max_seconds=0.0)
-    http = httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={}))
-    )
-    client = MessagesClient(Transport(config, client=http), BrokenResolver(), config=config)
+    transport = make_transport(lambda r: httpx.Response(200, json={}))
+    client = MessagesClient(transport, BrokenResolver())
     payloads = [builders.build_text("573000000000", "uno")]
     results = await client.send_batch(payloads, phone_number_id="PNID")
     assert results[0].ok is False

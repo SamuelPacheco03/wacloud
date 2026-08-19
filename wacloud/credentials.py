@@ -4,6 +4,7 @@ La librería NUNCA lee tokens de variables de entorno ni de una base de datos. E
 host implementa ``CredentialResolver`` (p. ej. leyendo de una tabla y descifrando
 con Fernet) y se lo pasa a los clientes de wacloud.
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

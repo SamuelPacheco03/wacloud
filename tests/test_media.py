@@ -1,9 +1,10 @@
 """Tests de descarga e ingesta de medios con MockTransport y un storage fake."""
+
 import hashlib
 
 import httpx
 
-from wacloud.config import GraphConfig
+from tests.factories import make_transport
 from wacloud.media.ingest import ingest_inbound_media
 from wacloud.media.storage import StoredMedia
 from wacloud.transport import Transport
@@ -24,9 +25,7 @@ class FakeStorage:
 
 
 def _transport(handler) -> Transport:
-    config = GraphConfig(backoff_base_seconds=0.0, backoff_max_seconds=0.0)
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return Transport(config, client=client)
+    return make_transport(handler)
 
 
 async def test_ingest_downloads_and_stores():
@@ -46,7 +45,9 @@ async def test_ingest_downloads_and_stores():
             )
         # 2) descarga binaria
         if "lookaside.fbsbx.com" in url:
-            return httpx.Response(200, content=media_bytes, headers={"content-type": "image/jpeg"})
+            return httpx.Response(
+                200, content=media_bytes, headers={"content-type": "image/jpeg"}
+            )
         return httpx.Response(404, json={"error": "not found"})
 
     storage = FakeStorage()
@@ -77,7 +78,9 @@ async def test_ingest_uses_fallback_url_when_no_media_id_url():
             # Meta no devuelve url → se usa fallback_url
             return httpx.Response(200, json={"mime_type": "audio/ogg"})
         if "fallback.example" in url:
-            return httpx.Response(200, content=media_bytes, headers={"content-type": "audio/ogg"})
+            return httpx.Response(
+                200, content=media_bytes, headers={"content-type": "audio/ogg"}
+            )
         return httpx.Response(404, json={"error": "nope"})
 
     storage = FakeStorage()

@@ -1,85 +1,92 @@
-"""Builders de plantillas: envío de OTP (auth) y de marketing.
+"""Builders de envío de plantillas: autenticación (OTP) y marketing.
 
-Separación clara respecto a ``messages/builders``:
-- aquí van los payloads específicos de *plantillas* (componentes con parámetros);
-- el envío de una plantilla genérica ya aprobada se hace con
-  ``messages.builders.build_template`` (o ``MessagesClient.send_template``).
+Separación respecto a ``messages/builders``:
 
-Las variantes de autenticación (``copy_code``, ``basic``, ``autofill``) cambian
-solo en los componentes/botón; el cuerpo siempre lleva el código como parámetro.
+- ``messages.builders.build_template`` arma el envío de **cualquier** plantilla y es la
+  base de todo lo de aquí;
+- este módulo aporta los **componentes** de los casos que tienen forma fija: el código
+  OTP de las plantillas de autenticación y el payload de la Marketing Messages API.
+
+Las tres variantes de autenticación (``copy_code``, ``one_tap``, ``zero_tap``) comparten
+el mismo payload de envío: el código va en el cuerpo y, si hay botón, también como
+parámetro del botón. Lo que las diferencia es cómo se aprobó la plantilla en Meta, no
+cómo se envía.
 """
+
 from __future__ import annotations
 
 from typing import Any
 
-from wacloud.messages.builders import _recipient, digits_only
+from wacloud.messages.builders import build_template
+from wacloud.recipient import digits_only
+
+__all__ = [
+    "build_auth_basic",
+    "build_auth_code",
+    "build_auth_copy_code",
+    "build_marketing_template",
+]
 
 
-def _auth_template_message(
-    to: str,
-    name: str,
-    language_code: str,
-    components: list[dict[str, Any]],
-) -> dict[str, Any]:
-    return {
-        **_recipient(to),
-        "type": "template",
-        "template": {
-            "name": str(name).strip(),
-            "language": {"code": str(language_code or "es").strip()},
-            "components": components,
-        },
-    }
+def _auth_components(code: str, *, with_button: bool) -> list[dict[str, Any]]:
+    """Componentes de una plantilla de autenticación.
 
-
-def build_auth_copy_code(
-    to: str, name: str, code: str, *, language_code: str = "es"
-) -> dict[str, Any]:
-    """Plantilla de autenticación con botón "Copiar código".
-
-    El código va dos veces: en el cuerpo (BODY) y en el parámetro del botón URL.
-    La plantilla debe estar aprobada en Meta con 1 parámetro de body y 1 de botón.
+    El código aparece dos veces cuando hay botón: en el ``BODY`` y en el parámetro del
+    botón URL. Meta lo exige así para las plantillas con botón OTP, sea ``copy_code``,
+    ``one_tap`` o ``zero_tap``.
     """
-    code = str(code).strip()
-    return _auth_template_message(
-        to,
-        name,
-        language_code,
-        [
-            {"type": "body", "parameters": [{"type": "text", "text": code}]},
+    components: list[dict[str, Any]] = [
+        {"type": "body", "parameters": [{"type": "text", "text": code}]}
+    ]
+    if with_button:
+        components.append(
             {
                 "type": "button",
                 "sub_type": "url",
                 "index": "0",
                 "parameters": [{"type": "text", "text": code}],
-            },
-        ],
+            }
+        )
+    return components
+
+
+def build_auth_code(
+    to: str,
+    name: str,
+    code: str,
+    *,
+    language_code: str = "es",
+    with_button: bool = True,
+) -> dict[str, Any]:
+    """Envía un código OTP con una plantilla de autenticación aprobada.
+
+    ``with_button=True`` cubre las plantillas con botón OTP (copy_code, one_tap y
+    zero_tap, que se envían igual). ``with_button=False`` cubre las que solo muestran
+    el código en el cuerpo.
+
+    El número de parámetros debe coincidir con el de la plantilla aprobada: si no
+    coincide, Meta responde el código ``132000``.
+    """
+    clean_code = str(code or "").strip()
+    if not clean_code:
+        raise ValueError("el código de autenticación es obligatorio")
+    return build_template(
+        to, name, language_code, _auth_components(clean_code, with_button=with_button)
     )
+
+
+def build_auth_copy_code(
+    to: str, name: str, code: str, *, language_code: str = "es"
+) -> dict[str, Any]:
+    """Plantilla de autenticación con botón (copiar código, one-tap o zero-tap)."""
+    return build_auth_code(to, name, code, language_code=language_code, with_button=True)
 
 
 def build_auth_basic(
     to: str, name: str, code: str, *, language_code: str = "es"
 ) -> dict[str, Any]:
-    """Plantilla de autenticación básica (solo muestra el código, sin botón)."""
-    code = str(code).strip()
-    return _auth_template_message(
-        to,
-        name,
-        language_code,
-        [{"type": "body", "parameters": [{"type": "text", "text": code}]}],
-    )
-
-
-def build_auth_autofill(
-    to: str, name: str, code: str, *, language_code: str = "es"
-) -> dict[str, Any]:
-    """Plantilla de autenticación con botón de autocompletado (one-tap).
-
-    El botón es ``sub_type="url"`` (one-tap autofill); a efectos de envío el
-    parámetro es el mismo código, igual que copy_code. La diferencia real está en
-    cómo se aprobó la plantilla en Meta (botón OTP autofill vs copy_code).
-    """
-    return build_auth_copy_code(to, name, code, language_code=language_code)
+    """Plantilla de autenticación sin botón: solo muestra el código en el cuerpo."""
+    return build_auth_code(to, name, code, language_code=language_code, with_button=False)
 
 
 def build_marketing_template(
@@ -92,9 +99,18 @@ def build_marketing_template(
     product_policy: str | None = None,
     message_activity_sharing: bool | None = None,
 ) -> dict[str, Any]:
-    """Payload para ``POST /{pnid}/marketing_messages`` (plantillas de marketing).
+    """Payload para ``POST /{phone_number_id}/marketing_messages``.
 
-    Requiere al menos ``to`` o ``recipient``; si hay ambos, Meta prioriza ``to``.
+    La Marketing Messages API (antes "MM Lite") es GA desde noviembre de 2025 y solo
+    acepta plantillas de categoría ``MARKETING``: enviar una de utilidad o autenticación
+    devuelve el código ``134100``.
+
+    Requiere ``to`` y/o ``recipient`` (un BSUID). Si van ambos, Meta prioriza ``to``.
+
+    ``product_policy`` admite ``CLOUD_API_FALLBACK`` (si el mensaje no es elegible para
+    MM, se entrega por Cloud API) o ``STRICT`` (falla en vez de caer de vuelta). Meta no
+    documenta cuál es el valor por defecto, así que conviene fijarlo explícitamente
+    cuando la entrega por MM debe ser determinista.
     """
     to_clean = digits_only(to) if to else ""
     recipient_clean = (recipient or "").strip()

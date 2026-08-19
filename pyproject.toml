@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wacloud"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Cliente limpio y stateless para la WhatsApp Cloud API de Meta (envío, plantillas, webhooks, medios)."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
+license = { file = "LICENSE" }
 dependencies = [
     "httpx>=0.27",
     "pydantic>=2",
@@ -18,7 +18,15 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
 ]
+
+# La versión vive solo en wacloud/__init__.py; duplicarla en dos sitios garantiza
+# que tarde o temprano se desincronizan.
+[tool.hatch.version]
+path = "wacloud/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["wacloud"]
@@ -26,3 +34,73 @@ packages = ["wacloud"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# --strict-markers: un marcador mal escrito falla en vez de ignorarse.
+# --cov-fail-under: la cobertura no puede bajar sin que nadie se entere.
+addopts = "--strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["wacloud"]
+
+[tool.coverage.report]
+# Umbral por debajo de la cobertura actual (95%) para dejar margen a un refactor
+# puntual, pero lo bastante alto como para que un descuido salte.
+fail_under = 90
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]
+
+[tool.ruff]
+line-length = 95
+target-version = "py310"
+
+[tool.ruff.format]
+# Comillas dobles y magic trailing comma, que es lo que ya sigue el código.
+quote-style = "double"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",  # ruff
+    "PL",   # pylint
+    "ARG",  # argumentos sin usar
+    "PTH",  # pathlib
+]
+ignore = [
+    "PLR0913",  # los builders de Meta tienen muchos parámetros por naturaleza
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Los tests comprueban límites y códigos con literales; nombrarlos como constantes
+# los haría menos legibles, no más. Los handlers de MockTransport reciben la request
+# aunque no siempre la usen, y algunos tests importan dentro de la función a propósito.
+"tests/*" = ["PLR2004", "ARG001", "ARG002", "ARG005", "PLC0415", "E501"]
+# Los métodos de un Protocol declaran la firma del contrato: sus argumentos no se
+# usan por definición.
+"wacloud/credentials.py" = ["ARG002"]
+"wacloud/media/storage.py" = ["ARG002"]
+# __all__ va agrupado por área con comentarios, que documenta mejor que el orden
+# alfabético plano.
+"wacloud/__init__.py" = ["RUF022"]
+"wacloud/media/__init__.py" = ["RUF022"]
+"wacloud/templates/__init__.py" = ["RUF022"]
+"wacloud/webhook/__init__.py" = ["RUF022"]
+"wacloud/numbers/__init__.py" = ["RUF022"]
+"wacloud/messages/builders/__init__.py" = ["RUF022"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unreachable = true
+# Los payloads de Meta son dict[str, Any] por definición: exigir tipado exacto de una
+# forma que Meta cambia entre versiones daría una falsa sensación de seguridad.
+disallow_any_explicit = false

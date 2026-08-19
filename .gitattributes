@@ -1,0 +1,10 @@
+# Normaliza los finales de línea a LF en el repositorio. Sin esto, un working copy
+# de Windows (CRLF) y la CI en Ubuntu (LF) producen diffs espurios y `ruff format
+# --check` puede discrepar entre local y CI.
+* text=auto eol=lf
+
+# Binarios: nunca tocar.
+*.png binary
+*.jpg binary
+*.webp binary
+*.pdf binary

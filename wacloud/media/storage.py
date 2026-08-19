@@ -3,6 +3,7 @@
 La librería no sabe de Cloudflare R2, S3 ni disco: define el protocolo y el host
 aporta la implementación concreta (p. ej. ``R2StorageBackend`` con aioboto3).
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
