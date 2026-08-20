@@ -20,9 +20,11 @@ from wacloud.webhook.events import (
     WebhookEvents,
     WebhookInboundMessage,
     WebhookStatus,
+    WebhookTemplateStatus,
 )
 from wacloud.webhook.extract import (
     as_dict,
+    as_id,
     clean_str,
     dict_list,
     extract_interactive,
@@ -110,31 +112,74 @@ def _build_status(
     )
 
 
+#: Campo de ``changes[]`` que trae el resultado de la revisión de una plantilla.
+TEMPLATE_STATUS_FIELD = "message_template_status_update"
+
+#: Meta usa esta cadena para decir "sin motivo", en vez de omitir el campo.
+_NO_REASON = "NONE"
+
+
+def _build_template_status(
+    value: dict[str, Any], *, waba_id: str | None
+) -> WebhookTemplateStatus | None:
+    """Traduce un ``message_template_status_update`` al evento normalizado.
+
+    Sin ``event`` no hay nada que contar, así que se descarta en vez de propagar un
+    cambio de estado sin estado. Es también lo que hace inofensivo que Meta mande por
+    este mismo campo variantes que aún no interpretamos.
+    """
+    event = clean_str(value.get("event"))
+    if not event:
+        return None
+
+    reason = clean_str(value.get("reason"))
+    return WebhookTemplateStatus(
+        waba_id=waba_id,
+        template_id=as_id(value.get("message_template_id")),
+        template_name=clean_str(value.get("message_template_name")),
+        template_language=clean_str(value.get("message_template_language")),
+        event=event,
+        raw=value,
+        reason=None if reason == _NO_REASON else reason,
+    )
+
+
 # -- Recorrido del payload --------------------------------------------------------
 
 
 def _iter_change_values(
     payload: dict[str, Any],
-) -> Iterator[tuple[dict[str, Any], str | None]]:
-    """Recorre ``entry[].changes[].value`` devolviendo cada valor con su ``waba_id``.
+) -> Iterator[tuple[dict[str, Any], str | None, str | None]]:
+    """Recorre ``entry[].changes[]`` devolviendo valor, ``waba_id`` y nombre del campo.
 
     Aislar el recorrido de la interpretación mantiene ``parse_webhook`` plano: la
     estructura anidada de Meta se atraviesa en un sitio y una sola vez.
+
+    El campo viaja con el valor porque una misma suscripción entrega cosas que no se
+    parecen en nada —mensajes de una conversación y el veredicto sobre una plantilla—
+    y es el único dato que dice cuál de las dos es.
     """
     for entry in dict_list(payload.get("entry")):
         waba_id = clean_str(entry.get("id"))
         for change in dict_list(entry.get("changes")):
             value = as_dict(change.get("value"))
             if value is not None:
-                yield value, waba_id
+                yield value, waba_id, clean_str(change.get("field"))
 
 
 def parse_webhook(payload: dict[str, Any]) -> WebhookEvents:
     """Parsea el payload crudo de Meta en mensajes y estados normalizados."""
     messages: list[WebhookInboundMessage] = []
     statuses: list[WebhookStatus] = []
+    template_statuses: list[WebhookTemplateStatus] = []
 
-    for value, waba_id in _iter_change_values(payload):
+    for value, waba_id, field_name in _iter_change_values(payload):
+        if field_name == TEMPLATE_STATUS_FIELD:
+            parsed_template = _build_template_status(value, waba_id=waba_id)
+            if parsed_template:
+                template_statuses.append(parsed_template)
+            continue
+
         metadata = as_dict(value.get("metadata"))
         phone_number_id = clean_str(metadata.get("phone_number_id")) if metadata else None
         contacts = dict_list(value.get("contacts"))
@@ -155,7 +200,7 @@ def parse_webhook(payload: dict[str, Any]) -> WebhookEvents:
             if parsed_status:
                 statuses.append(parsed_status)
 
-    return WebhookEvents(messages, statuses)
+    return WebhookEvents(messages, statuses, template_statuses)
 
 
 def first_phone_number_id(payload: dict[str, Any]) -> str | None:
@@ -164,7 +209,7 @@ def first_phone_number_id(payload: dict[str, Any]) -> str | None:
     El host lo necesita para saber qué ``app_secret`` usar, y eso ocurre antes de poder
     confiar en el contenido del payload.
     """
-    for value, _ in _iter_change_values(payload):
+    for value, _, _field in _iter_change_values(payload):
         metadata = as_dict(value.get("metadata"))
         pnid = clean_str(metadata.get("phone_number_id")) if metadata else None
         if pnid:
@@ -181,6 +226,7 @@ __all__ = [
     "WebhookEvents",
     "WebhookInboundMessage",
     "WebhookStatus",
+    "WebhookTemplateStatus",
     "first_phone_number_id",
     "parse_webhook",
 ]

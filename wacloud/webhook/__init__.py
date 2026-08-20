@@ -8,6 +8,7 @@ from wacloud.webhook.parser import (
     WebhookEvents,
     WebhookInboundMessage,
     WebhookStatus,
+    WebhookTemplateStatus,
     first_phone_number_id,
     parse_webhook,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "WebhookEvents",
     "WebhookInboundMessage",
     "WebhookStatus",
+    "WebhookTemplateStatus",
     "InboundInteractive",
     "InboundLocation",
     "InboundMedia",

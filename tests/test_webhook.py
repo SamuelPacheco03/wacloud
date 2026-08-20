@@ -401,3 +401,96 @@ def test_forwarded_context_has_no_replied_to():
         )
     )
     assert events.messages[0].replied_to is None
+
+
+# --- message_template_status_update -----------------------------------------
+
+
+def _template_status_payload(value: dict) -> dict:
+    return {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "id": "WABA123",
+                "changes": [{"field": "message_template_status_update", "value": value}],
+            }
+        ],
+    }
+
+
+def test_parse_template_status_update():
+    events = parse_webhook(
+        _template_status_payload(
+            {
+                "event": "APPROVED",
+                "message_template_id": 1234567890,
+                "message_template_name": "recordatorio_cobro",
+                "message_template_language": "es_CO",
+                "reason": "NONE",
+            }
+        )
+    )
+    assert not events.messages
+    assert not events.statuses
+    assert len(events.template_statuses) == 1
+
+    status = events.template_statuses[0]
+    assert status.event == "APPROVED"
+    assert status.waba_id == "WABA123"
+    assert status.template_name == "recordatorio_cobro"
+    assert status.template_language == "es_CO"
+    # Meta manda el id como número aquí y como cadena en el nodo de la Graph API.
+    assert status.template_id == "1234567890"
+
+
+def test_template_status_normalizes_none_reason():
+    """``"NONE"`` es la forma de Meta de decir "sin motivo": no debe llegar al host."""
+    events = parse_webhook(_template_status_payload({"event": "APPROVED", "reason": "NONE"}))
+    assert events.template_statuses[0].reason is None
+
+
+def test_template_status_keeps_a_real_reason():
+    events = parse_webhook(
+        _template_status_payload({"event": "REJECTED", "reason": "INCORRECT_CATEGORY"})
+    )
+    status = events.template_statuses[0]
+    assert status.event == "REJECTED"
+    assert status.reason == "INCORRECT_CATEGORY"
+
+
+def test_template_status_without_event_is_dropped():
+    """Sin ``event`` no hay cambio que contar. Es lo que hace inofensivas las variantes
+    que Meta manda por este mismo campo y que aún no interpretamos."""
+    events = parse_webhook(
+        _template_status_payload({"message_template_id": "1", "previous_category": "UTILITY"})
+    )
+    assert events.template_statuses == []
+
+
+def test_template_status_does_not_touch_messages():
+    """Los dos tipos de evento llegan por la misma suscripción y no deben mezclarse."""
+    payload = _text_payload()
+    payload["entry"][0]["changes"].append(
+        {
+            "field": "message_template_status_update",
+            "value": {"event": "PAUSED", "message_template_name": "promo"},
+        }
+    )
+    events = parse_webhook(payload)
+    assert len(events.messages) == 1
+    assert events.messages[0].text == "hola"
+    assert len(events.template_statuses) == 1
+    assert events.template_statuses[0].event == "PAUSED"
+
+
+def test_first_phone_number_id_ignores_template_changes():
+    """Un lote que empieza por una plantilla no puede dejar al host sin ``pnid``."""
+    payload = _text_payload()
+    payload["entry"][0]["changes"].insert(
+        0,
+        {
+            "field": "message_template_status_update",
+            "value": {"event": "APPROVED", "message_template_name": "promo"},
+        },
+    )
+    assert first_phone_number_id(payload) == "PNID1"

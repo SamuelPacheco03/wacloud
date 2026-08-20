@@ -40,6 +40,21 @@ def dict_list(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def as_id(value: Any) -> str | None:
+    """Identificador que Meta manda como número en unos sitios y como cadena en otros.
+
+    El id de plantilla es el caso: llega como ``int`` en el webhook y como ``str`` en
+    el nodo de la Graph API. Se normaliza a cadena para que el host no tenga que saber
+    por qué puerta entró el dato. ``bool`` se descarta porque en Python es un ``int``,
+    y ``True`` no es el identificador de nada.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    return clean_str(value)
+
+
 # -- Extracción del texto según el tipo de mensaje --------------------------------
 
 
