@@ -10,6 +10,15 @@ aquí queda el resumen por versión.
 
 ### Añadido
 
+- `message_template_status_update` en el webhook: `WebhookEvents.template_statuses`
+  con `WebhookTemplateStatus`. Es el único aviso de que Meta aprobó o rechazó una
+  plantilla — el nodo de la Graph API dice el estado actual pero no avisa del cambio,
+  y la revisión tarda de minutos a días. Antes había que leerlo de `raw` o sondear.
+- `builders.with_callback_data`: adjunta `biz_opaque_callback_data` a cualquier
+  payload. Meta lo devuelve intacto en el webhook de estado, así que correlacionar un
+  estado con la fila que lo originó deja de depender del `wamid` — que solo se conoce
+  **después** de que Meta acepte el envío.
+- `Transport.request(idempotent=...)` para declarar qué no se puede repetir.
 - Integración continua en GitHub Actions: tests sobre Python 3.10–3.13, formato, lint,
   tipos y comprobación de que `py.typed` viaja en el wheel.
 - Configuración de `pre-commit` con los mismos gates.
@@ -21,6 +30,15 @@ aquí queda el resumen por versión.
 
 ### Cambiado
 
+- **Un envío ya no se reintenta ante un fallo ambiguo.** `MessagesClient` marca
+  `POST /{phone_number_id}/messages` como no idempotente, así que un timeout, una
+  conexión caída o un 5xx sin código reconocible de Meta se propagan en vez de
+  reintentarse: ninguno de los tres demuestra que Meta rechazara la petición, y
+  repetirla cuando sí la procesó le manda al destinatario el mismo mensaje dos veces.
+  Lo que Meta rechaza explícitamente (429, `130429`, `131056`…) se sigue reintentando
+  igual, y las lecturas y la gestión de plantillas no cambian.
+  Un host que dependa del reintento en esos casos verá ahora el error: es lo que le
+  permite decidir con su propio estado, que la librería no tiene.
 - La versión tiene una sola fuente de verdad (`wacloud/__init__.py`); `pyproject.toml`
   la lee de ahí. Antes estaba duplicada y se sincronizaba a mano.
 - `tests/` es un paquete: `from tests.factories import ...` ya no depende de que el

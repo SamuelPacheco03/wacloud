@@ -99,6 +99,14 @@ class MediaLimits:
     STICKER_ANIMATED = 500 * 1024
 
 
+class TrackingLimits:
+    """Referencias que el host adjunta a un envío para reconocerlo más tarde."""
+
+    #: ``biz_opaque_callback_data``: viaja de ida en el envío y vuelve en el webhook de
+    #: estado, sin que Meta lo interprete.
+    CALLBACK_DATA = 512
+
+
 def ensure_max_length(value: str, maximum: int, *, field: str) -> str:
     """Valida la longitud de un campo y lo devuelve intacto.
 

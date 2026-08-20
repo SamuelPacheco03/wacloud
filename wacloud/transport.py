@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from wacloud.config import DEFAULT_CONFIG, GraphConfig
+from wacloud.error_codes import rule_for_code
 from wacloud.errors import WaCloudError, WaTransportError, error_from_response
 from wacloud.responses import (
     HTTP_ERROR_FLOOR,
@@ -42,6 +43,19 @@ _POOL_LIMITS = httpx.Limits(
     max_connections=100,
     keepalive_expiry=30.0,
 )
+
+
+def _meta_processed_it(error: WaCloudError) -> bool:
+    """Si el fallo demuestra que Meta miró la petición y la rechazó.
+
+    Un código del catálogo (``error_codes``) lo demuestra: Meta la evaluó y dijo que no,
+    así que repetirla no puede duplicar nada. Un 5xx sin código reconocible no demuestra
+    nada — la petición pudo haberse procesado y perderse solo la respuesta.
+
+    La distinción solo importa en peticiones no idempotentes; en las demás, repetir es
+    gratis y el criterio de ``retryable`` basta.
+    """
+    return rule_for_code(error.code) is not None
 
 
 class Transport:
@@ -99,13 +113,20 @@ class Transport:
     # -- Bucle de reintentos (compartido por todas las operaciones) ---------------
 
     async def _run(
-        self, attempt_fn: Attempt, *, phone_number_id: str | None
+        self,
+        attempt_fn: Attempt,
+        *,
+        phone_number_id: str | None,
+        idempotent: bool = True,
     ) -> httpx.Response:
         """Ejecuta ``attempt_fn`` con reintentos y devuelve la respuesta correcta.
 
         Lanza una subclase de ``WaCloudError`` si el error no es reintentable o si se
         agotan los intentos. El parseo del cuerpo queda para el llamador, que es quien
         sabe si espera JSON o bytes.
+
+        ``idempotent`` a ``False`` restringe qué se reintenta: solo lo que Meta rechazó
+        de forma reconocible. Ver ``_meta_processed_it``.
         """
         client = await self._get_client()
         last_error: WaCloudError | None = None
@@ -118,7 +139,10 @@ class Transport:
                 response = await attempt_fn(client)
             except httpx.HTTPError as exc:
                 last_error = WaTransportError(str(exc))
-                if not self._retry.should_retry(attempt):
+                # Un timeout o una conexión caída no dicen si Meta llegó a procesar la
+                # petición. Reintentar a ciegas un envío significa, cuando sí la
+                # procesó, un segundo mensaje al destinatario.
+                if not idempotent or not self._retry.should_retry(attempt):
                     break
                 await self._sleep_before_retry(attempt, None, last_error)
                 continue
@@ -128,6 +152,8 @@ class Transport:
 
             error = error_from_response(response.status_code, safe_json(response))
             if not error.retryable:
+                raise error
+            if not idempotent and not _meta_processed_it(error):
                 raise error
 
             last_error = error
@@ -168,8 +194,13 @@ class Transport:
         json: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         phone_number_id: str | None = None,
+        idempotent: bool = True,
     ) -> dict[str, Any]:
-        """Petición JSON a un path versionado de la Graph API. Devuelve el cuerpo."""
+        """Petición JSON a un path versionado de la Graph API. Devuelve el cuerpo.
+
+        ``idempotent`` a ``False`` para lo que no se puede repetir sin consecuencias
+        visibles para un tercero — enviar un mensaje, en la práctica.
+        """
         url = self._config.graph_url(path)
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -179,7 +210,9 @@ class Transport:
         async def attempt(client: httpx.AsyncClient) -> httpx.Response:
             return await client.request(method, url, json=json, params=params, headers=headers)
 
-        response = await self._run(attempt, phone_number_id=phone_number_id)
+        response = await self._run(
+            attempt, phone_number_id=phone_number_id, idempotent=idempotent
+        )
         return parse_json_body(response)
 
     async def post_multipart(
