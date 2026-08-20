@@ -2,6 +2,18 @@
 
 Guía para trabajar en `wacloud`. Léela antes de tocar código.
 
+Dos mitades: la primera son las convenciones del proyecto; la segunda, las reglas de la
+API de Meta que el código respeta y **por qué**. La segunda mitad no es documentación de
+Meta reescrita: son las trampas concretas que ya nos han costado tiempo, con la fuente.
+
+| | |
+|---|---|
+| **Empezar** | [Arranque rápido](#arranque-rápido) · [Glosario](#glosario-de-identificadores) |
+| **Diseñar** | [Regla de oro](#regla-de-oro-la-librería-no-sabe-de-infraestructura) · [Arquitectura](#arquitectura-por-capas) · [Estado](#estado-qué-hay-y-qué-falta) |
+| **Escribir** | [Convenciones](#convenciones-de-código) · [Anti-patrones](#anti-patrones) · [Errores](#errores) · [Tests](#tests) |
+| **Entregar** | [Flujo de trabajo](#flujo-de-trabajo) · [Git](#git-y-commits) · [Checklist](#checklist-antes-de-dar-algo-por-terminado) |
+| **Meta** | [Reglas de la API](#reglas-de-la-api-de-meta-que-el-código-debe-respetar) · [Sin verificar](#pendiente-de-verificar-contra-una-waba-real) |
+
 ## Qué es este proyecto
 
 Librería Python **stateless** e **infra-agnóstica** para la [WhatsApp Cloud API](https://developers.facebook.com/documentation/business-messaging/whatsapp) de Meta.
@@ -11,6 +23,34 @@ las piezas de infraestructura por inyección.
 
 Async-first (`httpx.AsyncClient`), multi-tenant por número de teléfono. Solo dos
 dependencias de runtime: `httpx` y `pydantic`.
+
+## Arranque rápido
+
+```bash
+pip install -e ".[dev]"
+pre-commit install          # engancha los gates al commit
+python scripts/check.py     # formato, lint, tipos y tests
+```
+
+Si `scripts/check.py` pasa, la CI pasa: ejecutan exactamente lo mismo.
+
+## Glosario de identificadores
+
+Meta usa media docena de identificadores parecidos y **no son intercambiables**.
+Confundirlos produce errores que no dicen cuál es el problema.
+
+| Identificador | Qué es | Dónde se usa |
+|---|---|---|
+| `phone_number_id` | El número emisor, dentro de la WABA | Enviar mensajes, medios, perfil |
+| `waba_id` | La WhatsApp Business Account que agrupa números | Plantillas, listar números |
+| `app_id` | La app de Meta (ni WABA ni número) | Resumable Upload |
+| `wamid` | Un mensaje concreto (`wamid.HBg...`) | Responder, reaccionar, marcar leído |
+| `media_id` | Un medio subido a la Media API | **Enviar** medios y plantillas |
+| `handle` | Un medio subido a la Resumable Upload API (`4::aW1h...`) | **Crear** plantillas con cabecera |
+| `flow_token` | Referencia propia que viaja al Flow y vuelve | Correlacionar la respuesta de un Flow |
+
+Los dos últimos son la fuente de error más frecuente: un `media_id` no vale como
+`header_handle` ni al revés. Ver [Crear y enviar](#crear-y-enviar-son-dos-mundos-distintos).
 
 ## Regla de oro: la librería no sabe de infraestructura
 
@@ -24,6 +64,12 @@ Estas tres cosas **nunca** deben aparecer en `wacloud/`:
 Si una función necesita algo del mundo exterior, se define un `Protocol` y lo implementa
 el host. Añadir una dependencia a `pyproject.toml` es una decisión de peso: hoy solo hay
 `httpx` y `pydantic`, y así debe seguir salvo justificación fuerte.
+
+**Tampoco es responsabilidad de la librería**, aunque la Cloud API lo requiera: deduplicar
+webhooks (Meta reintenta 7 días), programar reintentos diferidos (los de 24 h), persistir
+conversaciones, ni limitar el ritmo por destinatario. La librería expone lo necesario para
+que el host lo haga —`retry_after_seconds`, `rate_limit_hook`, `wamid`— pero no guarda
+estado.
 
 ## Arquitectura por capas
 
@@ -74,6 +120,19 @@ credentials · models · recipient · limits · flows
 haga red, o un client que arme un `dict` de Meta inline, es un error de diseño. Los builders
 son testables sin mocks; los clients se testean con `httpx.MockTransport`.
 
+## Estado: qué hay y qué falta
+
+**Cubierto.** Envío de texto, los cinco tipos de medio, los cuatro interactivos (botones,
+CTA, lista, Flow), ubicación, contactos, stickers, reacciones y respuestas citadas. Ciclo
+de vida completo de plantillas (crear con validación local, editar, listar con paginación,
+borrar) y los 11 tipos de botón. Subida de medios por los dos sistemas. Webhook entrante
+normalizado. Gestión del número.
+
+**Falta.** Mensajes de catálogo y producto (necesitan un catálogo de Commerce Manager) y
+los webhooks de gestión más allá de `messages` —`message_template_status_update`,
+`account_update`, `phone_number_quality_update`—, que hoy hay que leer de `raw`. El primero
+es el que avisa de si Meta aprobó una plantilla, así que es el candidato natural.
+
 ## Convenciones de código
 
 - `from __future__ import annotations` en todos los módulos. Sintaxis `X | None` (target 3.10+).
@@ -85,7 +144,6 @@ son testables sin mocks; los clients se testean con `httpx.MockTransport`.
 - Nombres de dominio en inglés (los de la API de Meta: `phone_number_id`, `waba_id`,
   `wamid`); prosa y comentarios en español.
 - Sin `print`. Sin estado global mutable. Sin singletons.
-- `assert` nunca como control de flujo: desaparece con `python -O`.
 - Pydantic: campos por defecto con `Field(default_factory=...)`, nunca `= []` ni `= {}`.
 
 ### Estricto al construir, permisivo al parsear
@@ -126,9 +184,25 @@ helper, ese helper es público y vive en un sitio compartido: por eso `recipient
 `limits.py` y `flows.py` están en la raíz del paquete, y por eso `media_object()` e
 `interactive_message()` no llevan guion bajo.
 
-Tampoco se usa un nombre de builtin como nombre de método: `list` sombrea al builtin dentro
-del cuerpo de la clase y rompe las anotaciones `list[...]` de los métodos siguientes. Por
-eso los listados se llaman `list_all`.
+Un import circular casi nunca se arregla moviendo el import: señala que algo está en la
+capa equivocada. `FlowAction` vivía en `templates/enums.py` y lo necesitaba `messages/`;
+la solución no fue un import diferido sino sacarlo a `wacloud/flows.py`, porque los Flows
+no son un concepto de plantillas.
+
+### Anti-patrones
+
+Todos estos estuvieron en el código y costaron un bug real. Si aparece uno, es regresión.
+
+| No hagas | Por qué | En su lugar |
+|---|---|---|
+| Recortar un valor que excede un límite | El receptor recibe algo distinto de lo que el host pidió, sin rastro en logs | `raise ValueError` con el límite y el valor |
+| `assert` como control de flujo | `python -O` los elimina; la función devolvía `None` en vez de lanzar | `if ...: raise` |
+| Convertir a `Enum` un campo de respuesta | Meta se contradice en la ortografía; revienta en producción | Guardar `str`, comparar con el enum |
+| Ramificar por status HTTP | El mismo 400 puede ser permanente o reintentable en 24 h | Ramificar por `error.code` |
+| Duplicar la versión en dos ficheros | Se sincronizó a mano seis veces; se desincroniza seguro | `[tool.hatch.version]` lee `__init__.py` |
+| Llamar `list` a un método | Sombrea el builtin y rompe las anotaciones `list[...]` posteriores | `list_all` |
+| Inventar un límite que Meta no publica | Rechaza en local valores que Meta acepta | No validar, y dejarlo escrito |
+| Paginar solo la primera página | Devuelve listas incompletas en silencio | Seguir `paging.cursors.after` mientras haya `next` |
 
 ## Errores
 
@@ -142,32 +216,74 @@ El host debe poder decidir qué hacer **sin parsear strings**:
 Todo error lleva `status_code`, `body`, `code` (el de Meta), `details` y `fbtrace_id`. Al
 añadir información de error, se expone como atributo tipado, nunca embebida en el mensaje.
 
+La clase se elige por el **código de Meta** antes que por el status: `131050` (opt-out)
+llega con HTTP 429, y clasificarlo como `WaRateLimited` daría un error "reintentable" que
+no debe reintentarse nunca.
+
 ## Tests
 
 - `pytest` + `pytest-asyncio` en modo `auto` (no hace falta decorar con `@pytest.mark.asyncio`).
 - **Nunca red real.** Los clients se testean con `httpx.MockTransport`; los builders,
   llamándolos directamente y comprobando el `dict`.
-- El cableado común vive en `tests/factories.py`: `make_transport`, `make_messages_client`,
-  `capturing_handler`, `accepted_handler`… Si un test necesita montar un cliente a mano, es
-  señal de que falta un factory.
-- En tests de reintentos, usar `fast_policy()` para que no esperen.
+- El cableado común vive en `tests/factories.py`. Si un test monta un cliente a mano, es
+  señal de que falta un factory:
+
+| Factory | Para qué |
+|---|---|
+| `make_transport(handler)` | Transport sobre `MockTransport` |
+| `make_messages_client` · `make_templates_client` | Cliente listo con resolver estático |
+| `capturing_handler(respuesta)` | `(capturado, handler)`: registra `path`, `method`, `params`, `body` |
+| `accepted_handler()` | Simula un envío aceptado (`wamid.OK`) |
+| `ok_handler()` | Responde 200 sin inspeccionar nada |
+| `fast_policy(n)` | Política de reintentos sin esperas |
+
 - Todo builder nuevo necesita un test que verifique la forma exacta del payload contra la
   doc de Meta. **Un builder sin test es un payload que Meta rechazará en producción.**
 - Los tests que fijan una decisión deliberada (no validar algo, aceptar dos formas) llevan
   un docstring explicando por qué, para que nadie los "arregle" después.
+
+Los dos patrones a copiar:
+
+```python
+# Builder: comprobar la forma exacta contra la doc de Meta.
+def test_positional_body_example_is_a_list_of_lists():
+    """Meta espera [["a", "b"]] en el cuerpo: doble corchete."""
+    component = components.body("Hola {{1}}, tu pedido {{2}}.", examples=["Ana", "A-1"])
+    assert component["example"] == {"body_text": [["Ana", "A-1"]]}
+
+
+# Cliente: comprobar el endpoint y el cuerpo que sale por la red.
+async def test_send_location_posts_expected_payload():
+    captured, handler = accepted_handler()
+    await make_messages_client(handler).send_location(
+        "573001112233", phone_number_id="PNID", latitude=4.711, longitude=-74.07
+    )
+    assert captured["body"]["type"] == "location"
+```
+
+Y el patrón para verificar que **no** se hace una llamada:
+
+```python
+async def test_create_rejects_invalid_template_before_calling_meta():
+    """Meta limita a 100 creaciones/hora: no se gasta cupo en algo inválido."""
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(200, json={})
+
+    with pytest.raises(ValueError):
+        await client.create(...)
+    assert calls["n"] == 0
+```
 
 ## Flujo de trabajo
 
 Un solo comando ejecuta todo lo que ejecuta la CI:
 
 ```bash
-python scripts/check.py
-```
-
-Con `--fix` arregla además formato y lint:
-
-```bash
-python scripts/check.py --fix
+python scripts/check.py          # formato, lint, tipos y tests
+python scripts/check.py --fix    # además arregla formato y lint
 ```
 
 Por separado, si hace falta:
@@ -182,15 +298,24 @@ python -m pytest -q --cov=wacloud
 `mypy` corre en modo `strict` y la cobertura tiene un mínimo del 90 %. Los cuatro deben
 pasar antes de dar por terminado un cambio.
 
-Opcional pero recomendado, engancha los gates al commit:
-
-```bash
-pre-commit install
-```
-
 La CI (`.github/workflows/ci.yml`) repite lo mismo sobre Python 3.10, 3.11, 3.12 y 3.13, y
 además comprueba que `py.typed` viaja dentro del wheel — sin ese fichero el host pierde
 todos los tipos y el fallo es silencioso.
+
+### Git y commits
+
+- **Nunca commitear directo a `main`.** Rama por trabajo, y merge con `--no-ff` para que el
+  punto de integración quede en el historial y se pueda revertir de una pieza.
+- Prefijos: `feat`, `fix`, `refactor`, `test`, `docs`, `build`, `chore`.
+- El asunto va en imperativo y en minúscula, sin punto final.
+- **El cuerpo explica el porqué, no el qué** — el diff ya dice qué cambió. Si el commit
+  arregla un bug, describe el modo de fallo: "Meta no devuelve error al expirar una
+  versión, redirige en silencio" vale más que "actualiza la versión de la API".
+- Cada commit debe pasar los gates **por sí solo**: un punto de `git bisect` roto es peor
+  que un commit grande. Si el trabajo no se puede partir sin romper commits intermedios,
+  va en uno solo y se explica en el cuerpo.
+- Antes de `push`, `python scripts/check.py` sobre la rama ya mergeada. No se publica un
+  `main` roto.
 
 ### Versionado
 
@@ -207,6 +332,17 @@ rompen, documentarlos en `MIGRATION.md` con el antes/después.
 3. Añadir el método al client correspondiente — debe ser un delegado fino al builder.
 4. Exportarlo en el `__init__.py` del módulo y en el `__all__` raíz.
 5. Actualizar `CHANGELOG.md`.
+
+## Checklist antes de dar algo por terminado
+
+- [ ] `python scripts/check.py` en verde (formato, lint, mypy strict, tests ≥90 %).
+- [ ] El builder nuevo tiene un test que fija la forma del payload contra la doc de Meta.
+- [ ] Los docstrings explican reglas de Meta, no lo que hace el código.
+- [ ] Ningún archivo de funciones supera ~250 líneas, ninguna función ~40.
+- [ ] Nada nuevo en `__all__` sin exportar también en el `__init__.py` del módulo.
+- [ ] Si rompe el API pública: nota en `MIGRATION.md` con el antes/después.
+- [ ] `CHANGELOG.md` actualizado.
+- [ ] Si algo quedó sin verificar contra Meta, añadido a [la tabla del final](#pendiente-de-verificar-contra-una-waba-real).
 
 ## Compatibilidad
 
@@ -320,7 +456,8 @@ si viene está bien como oportunismo, pero no puede ser la única estrategia.
 - **`delivered` puede no llegar nunca.** Si el usuario está en la pantalla del chat, Meta manda
   `read` sin `delivered`. Una máquina de estados que exija el orden se atasca.
 - Los estados son exactamente cinco: `sent`, `delivered`, `read`, `failed`, `played`.
-- Meta reintenta durante 7 días y reparte a todas las apps suscritas: **hay que deduplicar**.
+- Meta reintenta durante 7 días y reparte a todas las apps suscritas: **hay que deduplicar**
+  (en el host, no aquí).
 - Una reacción entrante **sin** campo `emoji` significa que el usuario la retiró; Meta
   omite el campo en vez de mandarlo vacío.
 - `value.contacts` es el perfil de **quien escribe**; `message.contacts` son las tarjetas
