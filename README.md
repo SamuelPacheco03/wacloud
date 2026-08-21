@@ -402,3 +402,7 @@ los webhooks de gestión más allá de `messages` (`message_template_status_upda
 `account_update`, `phone_number_quality_update`), que hoy hay que leer de `raw`.
 
 Ver `MIGRATION.md` para los cambios de la 0.1 a la 0.2.
+
+## Licencia
+
+MIT. Ver [LICENSE](LICENSE).

@@ -8,7 +8,8 @@ dynamic = ["version"]
 description = "Cliente limpio y stateless para la WhatsApp Cloud API de Meta (envío, plantillas, webhooks, medios)."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "httpx>=0.27",
     "pydantic>=2",
