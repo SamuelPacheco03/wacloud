@@ -51,6 +51,7 @@ from wacloud.messages.builders.reactions import build_reaction, build_remove_rea
 from wacloud.messages.builders.status import build_mark_read
 from wacloud.messages.builders.template import build_template
 from wacloud.messages.builders.text import build_text
+from wacloud.messages.builders.tracking import with_callback_data
 from wacloud.recipient import digits_only, recipient_block
 
 __all__ = [
@@ -91,6 +92,7 @@ __all__ = [
     # Estado y modificadores
     "build_mark_read",
     "as_reply",
+    "with_callback_data",
     # Destinatario
     "digits_only",
     "recipient_block",

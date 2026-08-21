@@ -135,6 +135,37 @@ class WebhookStatus:
 
 
 @dataclass(frozen=True)
+class WebhookTemplateStatus:
+    """Cambio de estado de una plantilla, tal como lo notifica Meta.
+
+    Es el **único** aviso de que una plantilla pasó de ``PENDING`` a ``APPROVED`` o
+    ``REJECTED``: el nodo de la Graph API dice el estado actual, pero no avisa cuando
+    cambia, y la revisión tarda de minutos a días. Sin este evento el host no tiene
+    más remedio que sondear.
+
+    ``event`` es el estado nuevo (``APPROVED``, ``REJECTED``, ``PAUSED``, ``DISABLED``,
+    ``PENDING_DELETION``, ``ARCHIVED``…). Se guarda como ``str`` y no como ``Enum`` por
+    la misma razón que el resto de enumerados que llegan de Meta: la lista crece entre
+    versiones y un valor nuevo no puede tumbar el lote.
+    """
+
+    waba_id: str | None
+    template_id: str | None
+    template_name: str | None
+    template_language: str | None
+    event: str
+    raw: dict[str, Any]
+    #: Motivo del rechazo o de la pausa. Meta manda la cadena ``"NONE"`` cuando no hay
+    #: ninguno; aquí es ``None``, para que el host no tenga que conocer ese valor
+    #: mágico ni escribir ``if reason and reason != "NONE"`` en cada sitio.
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class WebhookEvents:
     messages: list[WebhookInboundMessage] = field(default_factory=list)
     statuses: list[WebhookStatus] = field(default_factory=list)
+    #: Cambios de estado de plantillas (``message_template_status_update``). Llegan por
+    #: la misma suscripción que los mensajes, pero no tienen nada que ver con ninguna
+    #: conversación: son la respuesta de la revisión de Meta.
+    template_statuses: list[WebhookTemplateStatus] = field(default_factory=list)

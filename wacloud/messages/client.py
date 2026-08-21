@@ -38,6 +38,11 @@ class MessagesClient:
 
         Existe para que el envío individual y el lote compartan exactamente la misma
         llamada: el lote resuelve el token una vez y lo reutiliza.
+
+        Va marcado como **no idempotente**, que es lo que restringe el reintento a lo
+        que Meta rechazó de forma reconocible. Repetir un envío tras un timeout o un
+        502 le manda al destinatario el mismo mensaje dos veces, y la librería no
+        guarda estado con el que darse cuenta.
         """
         return await self._transport.request(
             "POST",
@@ -45,6 +50,7 @@ class MessagesClient:
             access_token=access_token,
             json=payload,
             phone_number_id=phone_number_id,
+            idempotent=False,
         )
 
     async def send_payload(
@@ -53,14 +59,22 @@ class MessagesClient:
         *,
         phone_number_id: str,
         reply_to: str | None = None,
+        callback_data: str | None = None,
     ) -> SendResult:
         """Envía un payload ya construido (ver ``builders``) desde el número emisor.
 
         ``reply_to`` es el ``wamid`` del mensaje que se cita. Funciona con cualquier tipo
         de mensaje, así que está aquí y no repetido en cada builder.
+
+        ``callback_data`` es una referencia opaca del host que Meta devuelve intacta en
+        el webhook de estado. Va solo aquí y no en los atajos por tipo: quien necesita
+        correlacionar estados está construyendo el payload de todos modos, y repetir el
+        argumento en once firmas para un uso que pasa por esta puerta no lo mejora.
         """
         if reply_to:
             payload = builders.as_reply(payload, reply_to)
+        if callback_data:
+            payload = builders.with_callback_data(payload, callback_data)
         credentials = await self._resolver.for_phone_number_id(phone_number_id)
         body = await self._post_message(
             payload,

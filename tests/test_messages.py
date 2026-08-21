@@ -1,5 +1,7 @@
 """Tests del módulo messages: builders puros + MessagesClient con MockTransport."""
 
+import json
+
 import httpx
 import pytest
 
@@ -167,3 +169,57 @@ async def test_mark_read_posts_status_payload():
     await client.mark_read(phone_number_id="PNID", message_id="wamid.X")
     assert captured["body"]["status"] == "read"
     assert captured["body"]["typing_indicator"] == {"type": "text"}
+
+
+# --- biz_opaque_callback_data ------------------------------------------------
+
+
+def test_with_callback_data_does_not_mutate_the_original():
+    payload = builders.build_text("573000000000", "hola")
+    marked = builders.with_callback_data(payload, "delivery:018f")
+    assert marked["biz_opaque_callback_data"] == "delivery:018f"
+    assert "biz_opaque_callback_data" not in payload
+
+
+def test_callback_data_rejects_empty():
+    payload = builders.build_text("573000000000", "hola")
+    with pytest.raises(ValueError):
+        builders.with_callback_data(payload, "   ")
+
+
+def test_callback_data_rejects_over_the_limit():
+    payload = builders.build_text("573000000000", "hola")
+    with pytest.raises(ValueError, match="biz_opaque_callback_data"):
+        builders.with_callback_data(payload, "x" * 513)
+
+
+@pytest.mark.asyncio
+async def test_send_payload_attaches_callback_data():
+    sent: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        return httpx.Response(200, json={"messages": [{"id": "wamid.CB"}]})
+
+    client = make_messages_client(handler)
+    result = await client.send_payload(
+        builders.build_text("573000000000", "hola"),
+        phone_number_id="PNID",
+        callback_data="delivery:018f",
+    )
+    assert result.message_id == "wamid.CB"
+    assert sent["biz_opaque_callback_data"] == "delivery:018f"
+
+
+@pytest.mark.asyncio
+async def test_send_payload_without_callback_data_omits_the_field():
+    sent: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        return httpx.Response(200, json={"messages": [{"id": "wamid.X"}]})
+
+    await make_messages_client(handler).send_payload(
+        builders.build_text("573000000000", "hola"), phone_number_id="PNID"
+    )
+    assert "biz_opaque_callback_data" not in sent

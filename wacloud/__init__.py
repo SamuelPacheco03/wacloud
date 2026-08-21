@@ -55,6 +55,7 @@ from wacloud.webhook import (
     WebhookEvents,
     WebhookInboundMessage,
     WebhookStatus,
+    WebhookTemplateStatus,
     first_phone_number_id,
     parse_webhook,
     verify_signature,
@@ -123,6 +124,7 @@ __all__ = [
     "WebhookEvents",
     "WebhookInboundMessage",
     "WebhookStatus",
+    "WebhookTemplateStatus",
     # Errores
     "WaCloudError",
     "WaTransportError",
