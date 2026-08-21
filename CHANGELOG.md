@@ -6,7 +6,10 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
-## [Sin publicar]
+## [0.7.0] — 2026-08-21
+
+El veredicto de las plantillas llega solo, un envío se puede reconocer al volver, y ya no
+se duplica ante un fallo ambiguo. Hay un cambio de comportamiento; está en `MIGRATION.md`.
 
 ### Añadido
 

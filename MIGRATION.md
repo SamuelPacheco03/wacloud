@@ -1,9 +1,53 @@
-# Migración 0.1 → 0.2
+# Migración entre versiones
+
+Los cambios que rompen, versión a versión. La más reciente arriba.
+
+## 0.6 → 0.7
+
+Ningún cambio de firma: nada deja de compilar. Lo que cambia es **cuándo se reintenta un
+envío**, y eso puede cambiar lo que ve un host que dependía del comportamiento anterior.
+
+### Un envío ya no se reintenta ante un fallo ambiguo
+
+Hasta ahora el transporte reintentaba cualquier `httpx.HTTPError` y cualquier 5xx, también
+en `POST /{phone_number_id}/messages`. Un timeout de lectura o un 502 pelado **no dicen si
+Meta llegó a procesar el envío**, así que el reintento le mandaba al destinatario el mismo
+mensaje dos veces. La librería no guarda estado con el que darse cuenta, y deduplicar no es
+su trabajo.
+
+Ahora un envío solo reintenta lo que Meta rechazó de forma reconocible: un código del
+catálogo demuestra que lo evaluó y dijo que no, así que repetirlo no puede duplicar nada.
+429, `130429` y `131056` se siguen reintentando igual. **Las lecturas y la gestión de
+plantillas no cambian.**
+
+**Qué hacer.** Si tu host confiaba en ese reintento, ahora verá el error en vez de un envío
+que se resuelve solo:
+
+```python
+try:
+    await messages.send_text(to, body, phone_number_id=pnid)
+except WaCloudError as exc:
+    if exc.retryable:
+        # Meta lo rechazó: se puede reprogramar sin riesgo.
+        schedule_retry(after=exc.retry_after_seconds)
+    else:
+        # Ambiguo o definitivo. Reintentar aquí es lo que duplica el mensaje.
+        mark_failed(exc)
+```
+
+Es más trabajo, y es el correcto: **tú** sabes si ese mensaje ya salió y la librería no. Si
+además adjuntas `biz_opaque_callback_data` al enviar (nuevo en esta versión), el webhook de
+estado te devuelve tu propia referencia y puedes reconciliar sin adivinar.
+
+Para volver al comportamiento anterior en una llamada concreta, `Transport.request` acepta
+`idempotent=True`. No se recomienda en envíos.
+
+## 0.1 → 0.2
 
 Versión de saneamiento: arregla bugs, separa responsabilidades y hace accionables los
 errores de Meta. Hay cambios que rompen la API pública; están todos aquí.
 
-## Lo urgente
+### Lo urgente
 
 **La versión de la Graph API pasa de `v19.0` a `v25.0`.** `v19.0` expiró el 21 de mayo de
 2026. Meta **no devuelve error** cuando una versión expira: redirige la llamada en
@@ -15,9 +59,9 @@ from wacloud import GraphConfig
 config = GraphConfig(api_version="v26.0")
 ```
 
-## Cambios que rompen
+### Cambios que rompen
 
-### `GraphConfig` ya no lleva la política de reintentos
+#### `GraphConfig` ya no lleva la política de reintentos
 
 Los campos `max_retries`, `backoff_base_seconds` y `backoff_max_seconds` se movieron a
 `RetryPolicy`, que se inyecta en el `Transport`. Eran tres ejes de cambio distintos en la
@@ -41,7 +85,7 @@ El backoff por defecto pasa a la progresión que Meta recomienda (`4^X`: 1 s, 4 
 en vez de `0.5 · 2^X`. Meta **no documenta el header `Retry-After`** para la Cloud API; el
 mecanismo real es `estimated_time_to_regain_access`, que el transporte ahora lee.
 
-### Los clientes ya no aceptan `config`
+#### Los clientes ya no aceptan `config`
 
 `MessagesClient` y `TemplatesClient` recibían un `config` que guardaban y nunca leían. Se
 elimina: la configuración vive en el `Transport`, que es quien hace las peticiones.
@@ -56,7 +100,7 @@ MessagesClient(transport, resolver)
 TemplatesClient(transport, resolver, cache_ttl_seconds=60)
 ```
 
-### `TemplatesClient.list` pasa a llamarse `list_all`
+#### `TemplatesClient.list` pasa a llamarse `list_all`
 
 El nombre `list` sombreaba al builtin dentro del cuerpo de la clase, lo que rompía las
 anotaciones `list[...]` de los métodos siguientes (mypy lo detecta como error real).
@@ -68,7 +112,7 @@ templates = await client.list_all(waba_id)          # antes: client.list(...)
 Además ahora **sigue la paginación por cursores**: antes se quedaba con la primera página
 y en cuentas con más de 100 plantillas devolvía una lista incompleta en silencio.
 
-### Los builders fallan en vez de recortar
+#### Los builders fallan en vez de recortar
 
 `build_interactive_buttons` truncaba a 3 botones y cortaba los títulos a 20 caracteres sin
 avisar; ahora lanza `ValueError`. Recortar en silencio hace que el destinatario reciba algo
@@ -80,14 +124,14 @@ fuera del rango de E.164.
 
 Si tu código dependía del truncado, recorta explícitamente antes de llamar.
 
-### `build_auth_autofill` desaparece
+#### `build_auth_autofill` desaparece
 
 Devolvía exactamente lo mismo que `build_auth_copy_code`: en el envío, las tres variantes
 de OTP (copy_code, one-tap, zero-tap) comparten payload; lo que las diferencia es cómo se
 aprobó la plantilla en Meta. Usa `build_auth_copy_code`, o el nuevo `build_auth_code` con
 `with_button=`.
 
-### `WebhookInboundMessage`: los campos de medio se agrupan
+#### `WebhookInboundMessage`: los campos de medio se agrupan
 
 `media_id`, `mime_type` y `filename` pasan a un objeto `media` (`InboundMedia`), que además
 trae `sha256`. **Los tres siguen accesibles como propiedades**, así que el código existente
@@ -98,15 +142,15 @@ message.media_id          # sigue funcionando
 message.media.sha256      # nuevo
 ```
 
-### `error_from_response` y la jerarquía de errores
+#### `error_from_response` y la jerarquía de errores
 
 `WaCloudError.retryable` era un atributo de clase y ahora es de instancia: se calcula a
 partir del código de error de Meta. Comprobarlo sobre la instancia (`exc.retryable`) sigue
 funcionando; comprobarlo sobre la clase (`WaRateLimited.retryable`) ya no.
 
-## Novedades
+### Novedades
 
-### Gestión del número
+#### Gestión del número
 
 `NumbersClient` cubre la administración de la línea:
 
@@ -124,7 +168,7 @@ deprecó. Valida el PIN (seis dígitos), la región de localización y el sector
 **no** valida los límites de caracteres del perfil, porque Meta ya no los publica.
 
 
-### Interactivos de lista y Flow
+#### Interactivos de lista y Flow
 
 ```python
 messages.send_list(...)   # menú de opciones agrupadas en secciones
@@ -143,7 +187,7 @@ Al recibir, `message.interactive` normaliza los tres tipos de respuesta (`button
 los Flows hace además el segundo parseo de `response_json`, que Meta manda como cadena JSON
 dentro del JSON.
 
-### `FlowAction` y `FlowIcon` se mueven a `wacloud.flows`
+#### `FlowAction` y `FlowIcon` se mueven a `wacloud.flows`
 
 Estaban en `wacloud.templates.enums`, pero los Flows los usan tanto el botón `FLOW` de una
 plantilla como el mensaje interactivo de tipo `flow`. Dejarlos en `templates` obligaba a
@@ -152,7 +196,7 @@ import circular). **Se siguen reexportando desde `wacloud.templates.enums`**, as
 código existente no se rompe.
 
 
-### Ubicación, contactos, stickers y reacciones
+#### Ubicación, contactos, stickers y reacciones
 
 ```python
 messages.send_location(...)    # valida el rango de las coordenadas
@@ -169,7 +213,7 @@ El parser normaliza los mismos tipos al recibir: `message.location`, `message.re
 (con `.removed` cuando el usuario la retira) y `message.shared_contacts`. Cuidado con este
 último: `message.contacts` es el perfil de **quien escribe**, no las tarjetas compartidas.
 
-### Reorganización interna
+#### Reorganización interna
 
 `messages/builders.py` y `webhook/parser.py` pasan a ser paquetes partidos por
 responsabilidad. **Las rutas de import no cambian**: `from wacloud.messages import
@@ -177,7 +221,7 @@ builders` y `from wacloud.webhook.parser import parse_webhook` siguen funcionand
 la suite de tests pasó sin tocarse tras el split.
 
 
-### Creación de plantillas completa
+#### Creación de plantillas completa
 
 Antes `create()` era un pasamanos: el host escribía a mano el JSON de `components`, que es
 justo la parte que Meta rechaza. Ahora hay builders para toda la estructura
@@ -192,7 +236,7 @@ botón `COPY_CODE`— se generan solas.
 `create()` valida antes de llamar, así que un nombre con mayúsculas o un ejemplo que falta
 ya no consumen cupo de API.
 
-### Subida de medios
+#### Subida de medios
 
 - `upload_media()` — `POST /{phone_number_id}/media`, devuelve el `media_id` para enviar.
 - `upload_resumable()` — Resumable Upload API, devuelve el `handle` para crear plantillas
@@ -203,7 +247,7 @@ ya no consumen cupo de API.
 Los tamaños se validan antes de subir con los límites reales: **16 MB para vídeo**, no los
 100 MB que se citan a menudo (esos son solo para documentos).
 
-### Parámetros de envío
+#### Parámetros de envío
 
 `templates.parameters` cubre texto (posicional y con nombre), `currency`, `date_time`,
 medios, ubicación y los botones (`url`, `quick_reply`, `copy_code`, `flow`, `catalog`,
@@ -211,7 +255,7 @@ medios, ubicación y los botones (`url`, `quick_reply`, `copy_code`, `flow`, `ca
 cadena y `sub_type` en minúscula.
 
 
-### Los errores traen el código de Meta
+#### Los errores traen el código de Meta
 
 Meta dice explícitamente que hay que ramificar por `error.code`, nunca por el status HTTP
 ni por `error_subcode` (deprecado desde v16.0). Ahora se expone:
@@ -229,11 +273,11 @@ Esto arregla un comportamiento peligroso: antes, todo 429 y 5xx se reintentaba. 
 marketing), y `131049` se propaga al host con sus 24 horas de espera en vez de reintentarse
 tres veces en diez segundos, que añadía 4 días de penalización.
 
-### `verify_subscription`
+#### `verify_subscription`
 
 Faltaba por completo el alta del webhook (`GET` con `hub.challenge`). Ver el README.
 
-### Otras
+#### Otras
 
 - `Transport` es context manager: `async with Transport() as t:`.
 - `TemplatesClient.edit()` y `TemplatesClient.get()`.
@@ -247,7 +291,7 @@ Faltaba por completo el alta del webhook (`GET` con `hub.challenge`). Ver el REA
 - `py.typed`: mypy en el host ya ve los tipos de la librería.
 - Logging bajo el logger `wacloud.transport` en cada reintento.
 
-## Bugs corregidos
+### Bugs corregidos
 
 - **Cache de plantillas que no expiraba.** La comparación de TTL era `>` en vez de `>=`, así
   que con un TTL bajo la entrada se servía siempre desde el cache.

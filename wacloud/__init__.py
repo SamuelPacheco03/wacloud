@@ -62,7 +62,7 @@ from wacloud.webhook import (
     verify_subscription,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     # Configuración y transporte
