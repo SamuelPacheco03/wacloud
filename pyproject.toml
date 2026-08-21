@@ -19,7 +19,14 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5",
-    "ruff>=0.6",
+    # Ruff va acotado a una minor, y no es una manía: el formateador cambia entre
+    # minors. La 0.16 reformatea los bloques de código del README —desalineando
+    # comentarios puestos a mano— y `scripts/check.py` falla en un árbol limpio.
+    # Este rango es el mismo que fija `.pre-commit-config.yaml`; sin él, el gancho de
+    # commit y la CI podían discrepar sobre el mismo archivo.
+    "ruff>=0.15,<0.16",
+    # mypy no acota la minor porque un cambio suyo sale como error de tipo con nombre y
+    # línea, no como un reformateo silencioso de todo el árbol.
     "mypy>=1.11",
 ]
 
