@@ -6,6 +6,28 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.8.0]
+
+Lo que faltaba para dar de alta la WABA de un cliente sin tocar el panel de Meta.
+
+### Añadido
+
+- `WabaClient`: `subscribe`, `list_subscriptions`, `unsubscribe` y `get`. **Sin suscribir
+  la app a una WABA, Meta no entrega ni un solo webhook de esa cuenta**, y no avisa de
+  ello. `subscribe` admite `override_callback_uri` + `verify_token` para que cada cuenta
+  entregue a su propia URL.
+- `OAuthClient.exchange_code`: canje del código de Embedded Signup por el token de
+  negocio. El código es de un solo uso, así que la petición no se reintenta ante un fallo
+  de red.
+- `BlockedUsersClient`: `block`, `unblock` y `list_all`. `BlockResult` separa aceptados de
+  rechazados porque Meta responde por usuario, no por lote.
+
+### Cambiado
+
+- `Transport.request` acepta `access_token=None` para omitir la cabecera `Authorization`.
+  Lo necesita un solo endpoint —`/oauth/access_token`, donde las credenciales son el
+  propio `client_secret`—; para todo lo demás el token sigue siendo obligatorio.
+
 ## [0.7.0] — 2026-08-21
 
 El veredicto de las plantillas llega solo, un envío se puede reconocer al volver, y ya no

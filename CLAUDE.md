@@ -48,6 +48,8 @@ Confundirlos produce errores que no dicen cuál es el problema.
 | `media_id` | Un medio subido a la Media API | **Enviar** medios y plantillas |
 | `handle` | Un medio subido a la Resumable Upload API (`4::aW1h...`) | **Crear** plantillas con cabecera |
 | `flow_token` | Referencia propia que viaja al Flow y vuelve | Correlacionar la respuesta de un Flow |
+| `app_secret` | El secreto de la app de Meta | Firmar webhooks (host) y canjear el código de signup |
+| `code` | Código de un solo uso del popup de Embedded Signup | Canjearlo por el token de negocio |
 
 Los dos últimos son la fuente de error más frecuente: un `media_id` no vale como
 `header_handle` ni al revés. Ver [Crear y enviar](#crear-y-enviar-son-dos-mundos-distintos).
@@ -110,7 +112,10 @@ credentials · models · recipient · limits · flows
 | `templates/definition.py` | Ensamblado y reglas que cruzan componentes. |
 | `media/storage.py` | Contrato `StorageBackend`. |
 | `media/upload.py` | Media API (media_id) y Resumable Upload (handle). Sistemas distintos. |
-| `numbers/` | Administración del número: estado, registro, verificación, perfil. |
+| `numbers/client.py` | Administración del número: estado, registro, verificación, perfil. |
+| `numbers/blocking.py` | Lista de bloqueo. Moderar no es aprovisionar: cliente aparte. |
+| `waba/` | Alcance WABA: suscripción de webhooks y datos de la cuenta. |
+| `oauth.py` | Canje del código de Embedded Signup. Alcance **app**, no WABA. |
 | `webhook/events.py` | Estructuras de los eventos normalizados. Sin lógica. |
 | `webhook/extract.py` | Traducción del payload crudo a esos eventos. |
 | `webhook/parser.py` | Recorrido de `entry[].changes[].value`. |
@@ -126,12 +131,27 @@ son testables sin mocks; los clients se testean con `httpx.MockTransport`.
 CTA, lista, Flow), ubicación, contactos, stickers, reacciones y respuestas citadas. Ciclo
 de vida completo de plantillas (crear con validación local, editar, listar con paginación,
 borrar) y los 11 tipos de botón. Subida de medios por los dos sistemas. Webhook entrante
-normalizado. Gestión del número.
+normalizado. Gestión del número, lista de bloqueo, suscripción de la app a una WABA y canje de
+Embedded Signup.
 
 **Falta.** Mensajes de catálogo y producto (necesitan un catálogo de Commerce Manager) y
 los webhooks de gestión más allá de `messages` —`message_template_status_update`,
 `account_update`, `phone_number_quality_update`—, que hoy hay que leer de `raw`. El primero
 es el que avisa de si Meta aprobó una plantilla, así que es el candidato natural.
+
+### Un cliente por alcance, no por comodidad
+
+Hay cuatro alcances distintos en la API de Meta y cada uno tiene su cliente:
+
+| Cliente | Alcance | Se identifica con |
+|---|---|---|
+| `MessagesClient` · `NumbersClient` · `BlockedUsersClient` | Número | `phone_number_id` |
+| `TemplatesClient` · `WabaClient` | Cuenta de negocio | `waba_id` |
+| `OAuthClient` | App de Meta | `app_id` + `app_secret` |
+
+Meter `subscribed_apps` dentro de `NumbersClient` "porque va junto" mezclaría dos
+alcances y obligaría a pasar un identificador que ese endpoint no usa. Al añadir un
+endpoint nuevo, la pregunta es a qué se dirige, no dónde encaja mejor el import.
 
 ## Convenciones de código
 
@@ -438,6 +458,20 @@ Caso especial: `131049` exige esperar **≥24 h** — reintentar antes añade ot
 `estimated_time_to_regain_access` (minutos) dentro del header `X-Business-Use-Case-Usage`,
 más el backoff que Meta sí recomienda: **4^X segundos** (1, 4, 16, 64, 256). Leer `Retry-After`
 si viene está bien como oportunismo, pero no puede ser la única estrategia.
+
+## Sin suscripción no hay webhooks
+
+`POST /{waba_id}/subscribed_apps` es lo que conecta una WABA con la app. **Sin eso Meta
+no entrega ni un solo webhook de esa cuenta** — ni mensajes, ni estados, ni el veredicto
+de las plantillas — y no hay ningún error que lo indique: simplemente no llega nada.
+
+Con una WABA se hace una vez en el panel y se olvida. En multiempresa, donde cada cliente
+trae la suya, es un paso obligatorio del alta. Y cuando alguien reporte "no me llegan los
+mensajes", `list_subscriptions` es la primera comprobación.
+
+`override_callback_uri` permite que cada WABA entregue a una URL distinta de la de la app.
+Meta verifica esa URL con el mismo `GET` de `hub.challenge` que un webhook normal, así que
+exige `verify_token` a la vez.
 
 ## Rate limits que importan
 

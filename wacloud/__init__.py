@@ -28,6 +28,8 @@ from wacloud.media import (
 from wacloud.messages import MessagesClient, builders
 from wacloud.models import BatchSendResult, SendResult, TemplateInfo
 from wacloud.numbers import (
+    BlockedUsersClient,
+    BlockResult,
     BusinessProfile,
     BusinessVertical,
     CodeMethod,
@@ -35,6 +37,7 @@ from wacloud.numbers import (
     PhoneNumberInfo,
     QualityRating,
 )
+from wacloud.oauth import OAuthClient
 from wacloud.recipient import digits_only, normalize_recipient, recipient_block
 from wacloud.retry import DEFAULT_RETRY_POLICY, NO_RETRY_POLICY, RetryPolicy
 from wacloud.templates import (
@@ -51,6 +54,7 @@ from wacloud.templates import (
     parameters,
 )
 from wacloud.transport import Transport
+from wacloud.waba import BusinessToken, SubscribedApp, WabaClient, WabaInfo
 from wacloud.webhook import (
     WebhookEvents,
     WebhookInboundMessage,
@@ -62,7 +66,7 @@ from wacloud.webhook import (
     verify_subscription,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     # Configuración y transporte
@@ -88,6 +92,9 @@ __all__ = [
     "MessagesClient",
     "TemplatesClient",
     "NumbersClient",
+    "WabaClient",
+    "BlockedUsersClient",
+    "OAuthClient",
     "builders",
     # Plantillas: creación y envío
     "components",
@@ -112,6 +119,10 @@ __all__ = [
     "BatchSendResult",
     "TemplateInfo",
     "PhoneNumberInfo",
+    "WabaInfo",
+    "SubscribedApp",
+    "BusinessToken",
+    "BlockResult",
     "BusinessProfile",
     "QualityRating",
     "CodeMethod",
