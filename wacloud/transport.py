@@ -190,7 +190,7 @@ class Transport:
         method: str,
         path: str,
         *,
-        access_token: str,
+        access_token: str | None,
         json: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         phone_number_id: str | None = None,
@@ -200,12 +200,16 @@ class Transport:
 
         ``idempotent`` a ``False`` para lo que no se puede repetir sin consecuencias
         visibles para un tercero — enviar un mensaje, en la práctica.
+
+        ``access_token`` a ``None`` omite la cabecera ``Authorization``. Lo necesita un
+        único endpoint: ``/oauth/access_token``, donde las credenciales son el propio
+        ``client_secret`` y mandar además un bearer sería incoherente. Para todo lo demás
+        el token es obligatorio.
         """
         url = self._config.graph_url(path)
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
 
         async def attempt(client: httpx.AsyncClient) -> httpx.Response:
             return await client.request(method, url, json=json, params=params, headers=headers)

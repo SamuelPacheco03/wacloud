@@ -4,6 +4,11 @@ Administración de la línea, no mensajería. Usa la Business Management API, co
 límite de 200 peticiones por hora y WABA (5.000 si tiene un número registrado).
 """
 
+from wacloud.numbers.blocking import (
+    MAX_USERS_PER_CALL,
+    BlockedUsersClient,
+    BlockResult,
+)
 from wacloud.numbers.client import NumbersClient
 from wacloud.numbers.enums import (
     DATA_LOCALIZATION_REGIONS,
@@ -19,6 +24,9 @@ from wacloud.numbers.models import BusinessProfile, PhoneNumberInfo
 
 __all__ = [
     "NumbersClient",
+    "BlockedUsersClient",
+    "BlockResult",
+    "MAX_USERS_PER_CALL",
     "PhoneNumberInfo",
     "BusinessProfile",
     "QualityRating",
