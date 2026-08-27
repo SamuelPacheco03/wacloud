@@ -135,9 +135,9 @@ normalizado. Gestión del número, lista de bloqueo, suscripción de la app a un
 Embedded Signup.
 
 **Falta.** Mensajes de catálogo y producto (necesitan un catálogo de Commerce Manager) y
-los webhooks de gestión más allá de `messages` —`message_template_status_update`,
-`account_update`, `phone_number_quality_update`—, que hoy hay que leer de `raw`. El primero
-es el que avisa de si Meta aprobó una plantilla, así que es el candidato natural.
+los webhooks de gestión `account_update` y `phone_number_quality_update`, que hoy hay que
+leer de `raw`. `message_template_status_update` —el que avisa de si Meta aprobó una
+plantilla— sí llega parseado desde la 0.7.0, en `WebhookEvents.template_statuses`.
 
 ### Un cliente por alcance, no por comodidad
 

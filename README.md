@@ -11,14 +11,17 @@ Async sobre `httpx`, multi-tenant por número. Solo dos dependencias: `httpx` y 
 
 ## Instalación
 
+No está en PyPI, pero el repo es público: se instala desde el tarball que GitHub sirve por
+HTTPS, fijando un tag para que la instalación sea reproducible.
+
 ```bash
-pip install -e ./packages/wacloud
+pip install "wacloud @ https://github.com/SamuelPacheco03/wacloud/archive/v0.8.0.tar.gz"
 ```
 
-Con extras de desarrollo (pytest, ruff, mypy):
+Sobre una copia de trabajo, con los extras de desarrollo (pytest, ruff, mypy):
 
 ```bash
-pip install -e "./packages/wacloud[dev]"
+pip install -e ".[dev]"
 ```
 
 ## Uso
@@ -330,6 +333,64 @@ la documentación de Meta se contradice en la ortografía de varios valores y fo
 conversión haría fallar el parseo ante algo que Meta considera válido. Para comparar están
 `QualityRating`, `NumberStatus` y compañía.
 
+### Alta de una empresa: WABA y Embedded Signup
+
+Conectar la cuenta de un cliente sin entrar al panel de Meta son dos pasos, y el segundo es
+el que se olvida: **sin suscribir la app a la WABA, Meta no entrega ni un solo webhook de
+esa cuenta** —ni mensajes, ni estados, ni el veredicto de las plantillas—. Y no devuelve
+ningún error: simplemente no llega nada.
+
+```python
+from wacloud import OAuthClient, WabaClient
+
+# 1. El popup de Embedded Signup devuelve un `code` de un solo uso.
+oauth = OAuthClient(transport, app_id=APP_ID, app_secret=APP_SECRET)
+token = await oauth.exchange_code(code)          # token de negocio, de larga duración
+
+# 2. Suscribir la app, o esta cuenta no entregará ningún webhook.
+waba = WabaClient(transport, resolver)
+await waba.subscribe(waba_id)
+
+info = await waba.get(waba_id)
+print(info.name, info.account_review_status)     # sin aprobar no entrega en producción
+```
+
+`subscribe` es idempotente. Admite `override_callback_uri` para que cada cuenta entregue a
+una URL propia sin montar una app de Meta por cliente; si se usa, Meta exige también
+`verify_token` y verifica esa URL con el mismo `GET` de `hub.challenge` que un webhook
+normal.
+
+Cuando alguien reporta que no le llegan mensajes, la primera comprobación es si la
+suscripción quedó hecha y a qué URL apunta:
+
+```python
+for app in await waba.list_subscriptions(waba_id):
+    print(app.name, app.override_callback_uri)
+```
+
+Un aviso que la librería no puede evitar por ti: el `app_secret` viaja en la **query
+string** del canje porque así lo define Meta. No expongas `exchange_code` detrás de nada
+que registre URLs completas, y no lo reenvíes desde un frontend. El `code`, además, es de
+un solo uso: si el canje falla por red hay que rehacer el popup, no reintentar.
+
+### Lista de bloqueo
+
+```python
+from wacloud import BlockedUsersClient
+
+blocked = BlockedUsersClient(transport, resolver)
+
+result = await blocked.block(pnid, ["573001112233"])
+print(result.succeeded, result.failed)
+
+await blocked.unblock(pnid, ["573001112233"])
+print(await blocked.list_all(pnid))
+```
+
+Mira siempre `failed`: Meta responde **por usuario y no por lote**, así que puede aceptar
+parte y rechazar el resto. Dar por bloqueado a alguien que fue rechazado deja un agujero
+silencioso en la moderación.
+
 ### Manejo de errores
 
 Los errores llevan el código de Meta, que es lo que Meta manda usar para decidir:
@@ -365,7 +426,9 @@ except WaCloudError as exc:
 | `templates.definition` · `.placeholders` | Ensamblado y validación de variables. |
 | `templates` | `TemplatesClient` y builders de autenticación/marketing. |
 | `media` | `StorageBackend`, subida, descarga e ingesta de medios. |
-| `numbers` | Estado, registro, verificación y perfil del número. |
+| `numbers` | Estado, registro, verificación y perfil del número; `numbers.blocking`, la lista de bloqueo. |
+| `waba` | `WabaClient`: suscripción de la app a la WABA y metadatos de la cuenta. |
+| `oauth` | `OAuthClient`: canje del código de Embedded Signup por el token de negocio. |
 | `webhook` | Alta de suscripción, firma, y parser (`events` · `extract` · `parser`). |
 
 ## Desarrollo
@@ -397,11 +460,15 @@ los 11 tipos de botón; subida de medios y Resumable Upload API; webhook complet
 Cubre además ubicación, contactos, stickers, reacciones, respuestas citadas y los cuatro
 tipos de interactivo (botones, CTA, lista y Flow), tanto al enviar como al recibir.
 
-Pendiente: mensajes de catálogo y producto (requieren un catálogo de Commerce Manager), y
-los webhooks de gestión más allá de `messages` (`message_template_status_update`,
-`account_update`, `phone_number_quality_update`), que hoy hay que leer de `raw`.
+Del lado de la administración: gestión del número, lista de bloqueo, suscripción de la app
+a una WABA y canje de Embedded Signup — lo que hace falta para dar de alta a un cliente sin
+entrar al panel de Meta.
 
-Ver `MIGRATION.md` para los cambios de la 0.1 a la 0.2.
+Pendiente: mensajes de catálogo y producto (requieren un catálogo de Commerce Manager), y
+los webhooks de gestión `account_update` y `phone_number_quality_update`, que hoy hay que
+leer de `raw`. `message_template_status_update` sí llega parseado desde la 0.7.0.
+
+Ver `MIGRATION.md` para los cambios que rompen la API: hoy cubre 0.1 → 0.2 y 0.6 → 0.7.
 
 ## Licencia
 
