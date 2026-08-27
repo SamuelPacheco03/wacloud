@@ -6,7 +6,7 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
-## [0.8.0]
+## [0.8.0] — 2026-08-26
 
 Lo que faltaba para dar de alta la WABA de un cliente sin tocar el panel de Meta.
 
