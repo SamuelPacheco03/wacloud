@@ -103,6 +103,51 @@ def test_parse_media_message_exposes_media_id():
     assert msg.text == "mira"
 
 
+def _sticker(**extra):
+    payload = _text_payload()
+    payload["entry"][0]["changes"][0]["value"]["messages"] = [
+        {
+            "from": "573001112233",
+            "id": "wamid.STK",
+            "type": "sticker",
+            "sticker": {"id": "SID", "mime_type": "image/webp", **extra},
+        }
+    ]
+    return parse_webhook(payload).messages[0]
+
+
+def test_parse_animated_sticker():
+    """Un sticker animado y uno estático no se pintan igual: el panel necesita saberlo."""
+    msg = _sticker(animated=True)
+    assert msg.type == "sticker"
+    assert msg.media_id == "SID"
+    assert msg.media is not None
+    assert msg.media.animated is True
+
+
+def test_parse_static_sticker():
+    msg = _sticker(animated=False)
+    assert msg.media is not None
+    assert msg.media.animated is False
+
+
+def test_a_media_that_is_not_a_sticker_has_no_animated_flag():
+    """`None` es "no aplica", no "estático": Meta solo manda el campo en stickers."""
+    payload = _text_payload()
+    payload["entry"][0]["changes"][0]["value"]["messages"] = [
+        {"from": "5730011", "id": "wamid.IMG", "type": "image", "image": {"id": "MID"}}
+    ]
+    msg = parse_webhook(payload).messages[0]
+    assert msg.media is not None
+    assert msg.media.animated is None
+
+
+def test_a_non_boolean_animated_is_discarded():
+    """Permisivo al parsear: `bool("false")` es True, y eso pintaría mal el sticker."""
+    assert _sticker(animated="false").media.animated is None
+    assert _sticker(animated=1).media.animated is None
+
+
 def test_parse_interactive_button_reply():
     payload = _text_payload()
     payload["entry"][0]["changes"][0]["value"]["messages"] = [

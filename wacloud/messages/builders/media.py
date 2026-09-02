@@ -120,10 +120,16 @@ def build_sticker(
 ) -> dict[str, Any]:
     """Sticker por URL pública o ``media_id``. No admite ``caption``.
 
-    Meta solo acepta **WebP**: 100 KB si es estático y 500 KB si es animado. El tamaño no
-    se puede validar aquí porque el builder solo ve una referencia, no los bytes; la
-    comprobación va al subir (``wacloud.media.upload_media``). Un WebP normal enviado
-    como ``image`` sí admite hasta 5 MB: el límite estricto es de los stickers.
+    Meta solo acepta **WebP**: 100 KB si es estático y 500 KB si es animado.
+
+    **Ese límite no lo comprueba nadie**, ni aquí ni al subir. Aquí no se puede: el
+    builder ve una referencia, no los bytes. Y ``upload_media`` tampoco lo aplica, porque
+    un sticker y una imagen comparten el MIME ``image/webp`` y desde los bytes no se sabe
+    si el WebP está animado; se aplica el límite permisivo de imagen (5 MB) y Meta
+    rechaza el caso concreto.
+
+    Dicho de otra forma: un WebP de 3 MB pasa la validación local y lo rechaza Meta. Si
+    el host quiere fallar antes, tiene que medirlo él.
     """
     return {
         **recipient_block(to),

@@ -232,11 +232,15 @@ def extract_media(message: dict[str, Any], msg_type: str) -> InboundMedia | None
     typed = as_dict(message.get(msg_type))
     if typed is None:
         return None
+    animated = typed.get("animated")
     return InboundMedia(
         media_id=clean_str(typed.get("id")),
         mime_type=clean_str(typed.get("mime_type")),
         filename=clean_str(typed.get("filename")),
         sha256=clean_str(typed.get("sha256")),
+        # Solo se acepta un booleano de verdad: Meta lo manda así, y colar aquí un
+        # `bool(valor)` convertiría cualquier cadena —"false" incluida— en `True`.
+        animated=animated if isinstance(animated, bool) else None,
     )
 
 

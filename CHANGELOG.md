@@ -6,6 +6,30 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.9.0] — 2026-09-02
+
+### Añadido
+
+- `InboundMedia.animated`: si el WebP de un sticker entrante está animado. Meta lo manda
+  solo para stickers, así que en el resto de medios es `None` —que significa "no aplica",
+  no "estático"—. Importa al pintarlo: un sticker animado y uno estático no se muestran
+  igual, y hasta ahora había que sacarlo de `raw`.
+
+  Solo se acepta un booleano de verdad. Un `bool(valor)` convertiría la cadena `"false"`
+  en `True`, que es justo el error que pintaría mal el sticker.
+
+### Corregido
+
+- El docstring de `build_sticker` decía que el límite de tamaño del sticker «se comprueba
+  al subir». **No se comprueba en ninguna parte**, y `ensure_within_size_limit` ya lo
+  explicaba en sentido contrario: un sticker comparte el MIME `image/webp` con una imagen
+  y desde los bytes no se sabe si está animado, así que se aplica el límite permisivo de
+  imagen (5 MB) y Meta rechaza el caso concreto.
+
+  El código siempre hizo lo segundo; el docstring prometía una garantía inexistente. Un
+  WebP de 3 MB pasa la validación local y lo rechaza Meta: quien quiera fallar antes tiene
+  que medirlo en el host.
+
 ## [0.8.0] — 2026-08-26
 
 Lo que faltaba para dar de alta la WABA de un cliente sin tocar el panel de Meta.
