@@ -25,6 +25,10 @@ class InboundMedia:
     mime_type: str | None = None
     filename: str | None = None
     sha256: str | None = None
+    #: Solo en stickers: si el WebP está animado. Meta lo manda únicamente para ellos, así
+    #: que en el resto de medios es ``None`` —que aquí significa "no aplica", no "estático"—.
+    #: Importa al pintarlo: un sticker animado y uno estático no se muestran igual.
+    animated: bool | None = None
 
 
 @dataclass(frozen=True)
