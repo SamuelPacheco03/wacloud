@@ -20,9 +20,12 @@ aquí queda el resumen por versión.
 
 ### Añadido
 
-- **La convención de retorno, escrita** en `CLAUDE.md`: un recurso es un modelo tipado, una
-  colección es una `list[X]` ya paginada entera, y una operación es un `bool`. Un cliente
-  nunca devuelve el `dict` crudo de Meta.
+- **La convención de retorno, escrita** en `CLAUDE.md` y en el `README`: un recurso es un
+  modelo tipado, una colección es una `list[X]` ya paginada entera, y una operación es un
+  `bool`. Un cliente nunca devuelve el `dict` crudo de Meta.
+
+  En el `README` va en «Uso», que es donde el lector se hace su modelo de la API, y con las
+  tres formas ejecutándose en un ejemplo.
 
 - **`tests/test_contrato.py`**, que la comprueba recorriendo las clases de verdad, así que
   un método nuevo entra solo. Es la diferencia entre una costumbre y un contrato: la regla

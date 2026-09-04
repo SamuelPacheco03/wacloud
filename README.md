@@ -15,7 +15,7 @@ No está en PyPI, pero el repo es público: se instala desde el tarball que GitH
 HTTPS, fijando un tag para que la instalación sea reproducible.
 
 ```bash
-pip install "wacloud @ https://github.com/SamuelPacheco03/wacloud/archive/v0.8.0.tar.gz"
+pip install "wacloud @ https://github.com/SamuelPacheco03/wacloud/archive/v0.10.0.tar.gz"
 ```
 
 Sobre una copia de trabajo, con los extras de desarrollo (pytest, ruff, mypy):
@@ -62,6 +62,42 @@ class DbCredentialResolver:
     async def for_waba_id(self, waba_id: str) -> WaCredentials:
         ...
 ```
+
+### Lo que devuelve cada llamada
+
+Tres formas y no hay una cuarta:
+
+| Qué pides | Qué recibes | Ejemplo |
+| --- | --- | --- |
+| Un recurso | Un modelo tipado | `send_text` → `SendResult`; `numbers.get` → `PhoneNumberInfo` |
+| Una colección | Una `list[X]`, ya paginada entera | `templates.list_all` → `list[TemplateInfo]` |
+| Una operación | Un `bool` | `waba.subscribe`, `numbers.register`, `templates.delete` |
+
+```python
+result = await messages.send_text(to, "Hola", phone_number_id=pnid)
+result.message_id                                  # modelo
+
+for number in await numbers.list_all(waba_id):     # lista, sin envoltorio
+    print(number.display_phone_number, number.quality_rating)
+
+if await templates.delete(waba_id, name="recibo"): # booleano
+    ...
+```
+
+**Ninguna llamada devuelve el `dict` crudo de Meta.** Es la línea que separa esta librería
+de un `httpx` con azúcar: si tienes que leer el esquema de Meta para saber si algo salió
+bien, no te hemos ahorrado nada, y tu código queda atado a una forma que Meta cambia entre
+versiones. Para lo que el modelo no cubre está `raw` dentro de él:
+
+```python
+info = await numbers.get(pnid)
+info.quality_rating      # campo modelado
+info.raw["campo_nuevo"]  # lo que Meta añada entre versiones, sin esperar a una release
+```
+
+Un listado viene **completo**: la librería sigue los cursores de Meta hasta el final.
+Quedarse con la primera página devuelve listas incompletas en silencio, y ese fallo no se
+ve: parece simplemente que la plantilla no existe.
 
 ### Webhook
 
@@ -468,7 +504,8 @@ Pendiente: mensajes de catálogo y producto (requieren un catálogo de Commerce 
 los webhooks de gestión `account_update` y `phone_number_quality_update`, que hoy hay que
 leer de `raw`. `message_template_status_update` sí llega parseado desde la 0.7.0.
 
-Ver `MIGRATION.md` para los cambios que rompen la API: hoy cubre 0.1 → 0.2 y 0.6 → 0.7.
+Ver `MIGRATION.md` para los cambios que rompen la API: hoy cubre 0.1 → 0.2, 0.6 → 0.7 y
+0.9 → 0.10.
 
 ## Licencia
 
