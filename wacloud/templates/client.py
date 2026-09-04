@@ -118,8 +118,13 @@ class TemplatesClient:
         category: str | None = None,
         parameter_format: str | None = None,
         message_send_ttl_seconds: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> bool:
         """Edita una plantilla existente (``POST /{template_id}``).
+
+        Devuelve si Meta la aceptó, no el cuerpo de la respuesta: Meta contesta un acuse
+        —``{"success": true}``— y no la plantilla actualizada, así que devolver el ``dict``
+        crudo obligaba al host a leer la forma de Meta para saber algo que cabe en un
+        booleano.
 
         Restricciones de Meta: ``name`` y ``language`` no son editables; la categoría de
         una plantilla ``APPROVED`` no se puede cambiar; solo se editan plantillas en
@@ -149,14 +154,15 @@ class TemplatesClient:
             json=body,
         )
         self._cache.invalidate(waba_id)
-        return response
+        return bool(response.get("success", False))
 
-    async def delete(
-        self, waba_id: str, *, name: str, hsm_id: str | None = None
-    ) -> dict[str, Any]:
+    async def delete(self, waba_id: str, *, name: str, hsm_id: str | None = None) -> bool:
         """Borra una plantilla por nombre, o una versión concreta con ``hsm_id``.
 
         Sin ``hsm_id`` se borran **todas las variantes de idioma** con ese nombre.
+
+        Devuelve si Meta lo aceptó. Ojo con lo que significa un ``True`` aquí: borrar una
+        plantilla aprobada **bloquea su nombre 30 días**, y eso no se deshace.
         """
         credentials = await self._resolver.for_waba_id(waba_id)
         params: dict[str, Any] = {"name": str(name).strip()}
@@ -169,7 +175,7 @@ class TemplatesClient:
             params=params,
         )
         self._cache.invalidate(waba_id)
-        return response
+        return bool(response.get("success", False))
 
     # -- Consulta ----------------------------------------------------------------
 
