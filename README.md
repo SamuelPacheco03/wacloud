@@ -15,7 +15,7 @@ No está en PyPI, pero el repo es público: se instala desde el tarball que GitH
 HTTPS, fijando un tag para que la instalación sea reproducible.
 
 ```bash
-pip install "wacloud @ https://github.com/SamuelPacheco03/wacloud/archive/v0.10.0.tar.gz"
+pip install "wacloud @ https://github.com/SamuelPacheco03/wacloud/archive/v0.10.1.tar.gz"
 ```
 
 Sobre una copia de trabajo, con los extras de desarrollo (pytest, ruff, mypy):
