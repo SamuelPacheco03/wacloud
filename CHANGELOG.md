@@ -6,6 +6,24 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.10.1] — 2026-09-03
+
+Solo documentación: **el código es idéntico al de la 0.10.0**. Se publica porque lo que
+cambia es el `README`, y el `README` no viaja en un tag que se cortó antes de escribirlo.
+
+### Añadido
+
+- **La convención de retorno, en el `README`.** Estaba solo en `CLAUDE.md`, que lee quien
+  toca el código, y no donde lee quien usa la librería. Va dentro de «Uso», con las tres
+  formas —modelo, `list[X]` y `bool`— corriendo en un ejemplo ejecutado, no escrito de
+  memoria.
+
+### Corregido
+
+- El `pip install` del arranque fijaba `v0.8.0`: llevaba dos versiones sin tocarse, así que
+  copiar y pegar esa línea instalaba una librería más vieja que su propia documentación.
+- «`MIGRATION.md` hoy cubre 0.1 → 0.2 y 0.6 → 0.7» no mencionaba el 0.9 → 0.10.
+
 ## [0.10.0] — 2026-09-03
 
 ### Cambiado (rompe)
@@ -20,12 +38,9 @@ aquí queda el resumen por versión.
 
 ### Añadido
 
-- **La convención de retorno, escrita** en `CLAUDE.md` y en el `README`: un recurso es un
-  modelo tipado, una colección es una `list[X]` ya paginada entera, y una operación es un
-  `bool`. Un cliente nunca devuelve el `dict` crudo de Meta.
-
-  En el `README` va en «Uso», que es donde el lector se hace su modelo de la API, y con las
-  tres formas ejecutándose en un ejemplo.
+- **La convención de retorno, escrita** en `CLAUDE.md`: un recurso es un modelo tipado, una
+  colección es una `list[X]` ya paginada entera, y una operación es un `bool`. Un cliente
+  nunca devuelve el `dict` crudo de Meta. En el `README` llega en la 0.10.1.
 
 - **`tests/test_contrato.py`**, que la comprueba recorriendo las clases de verdad, así que
   un método nuevo entra solo. Es la diferencia entre una costumbre y un contrato: la regla
