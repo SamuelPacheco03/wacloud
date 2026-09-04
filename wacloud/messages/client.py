@@ -369,12 +369,18 @@ class MessagesClient:
         message_id: str,
         typing: bool = True,
         typing_type: str = "text",
-    ) -> dict[str, Any]:
-        """Marca un mensaje entrante como leído y muestra el indicador de escritura."""
+    ) -> bool:
+        """Marca un mensaje entrante como leído y muestra el indicador de escritura.
+
+        Devuelve si Meta lo aceptó, no el cuerpo de la respuesta: es un acuse
+        —``{"success": true}``— y devolverlo crudo dejaba al host leyendo la forma de Meta
+        para algo que cabe en un booleano.
+        """
         credentials = await self._resolver.for_phone_number_id(phone_number_id)
         payload = builders.build_mark_read(message_id, typing=typing, typing_type=typing_type)
-        return await self._post_message(
+        response = await self._post_message(
             payload,
             phone_number_id=phone_number_id,
             access_token=credentials.access_token,
         )
+        return bool(response.get("success", False))

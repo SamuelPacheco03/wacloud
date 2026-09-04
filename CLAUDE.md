@@ -166,6 +166,30 @@ endpoint nuevo, la pregunta es a qué se dirige, no dónde encaja mejor el impor
 - Sin `print`. Sin estado global mutable. Sin singletons.
 - Pydantic: campos por defecto con `Field(default_factory=...)`, nunca `= []` ni `= {}`.
 
+### Lo que devuelve un cliente
+
+Tres formas y no hay una cuarta. Es lo que el host consume, así que es superficie pública:
+
+| Qué es | Forma | Ejemplos |
+|---|---|---|
+| Un recurso | Modelo tipado | `SendResult`, `PhoneNumberInfo`, `WabaInfo`, `TemplateInfo` |
+| Una colección | `list[X]` desnuda, ya paginada entera | `list[TemplateInfo]`, `list[SubscribedApp]` |
+| Una operación | `bool` | `subscribe`, `register`, `edit`, `delete`, `mark_read` |
+
+**Un cliente nunca devuelve el `dict` crudo de Meta.** Es la línea que separa esta
+librería de un `httpx` con azúcar: si el host tiene que leer la forma de Meta para saber
+si algo salió bien, no le hemos ahorrado nada, y además queda atado a un esquema que Meta
+cambia entre versiones.
+
+El coste no es teórico. `edit`, `delete` y `mark_read` devolvieron `dict[str, Any]` hasta
+la 0.10.0, y el gateway que las consume acabó inventándose un campo distinto en cada ruta
+—`updated`, `deleted`— porque no había nada normalizado que traducir. Y como el `dict` no
+le decía nada, lo tiraba y respondía `True` a pelo: un "salió bien" que no leía de ninguna
+parte.
+
+Para el detalle que no cabe en un booleano está `raw` dentro del modelo, no un `dict` en
+la firma.
+
 ### Estricto al construir, permisivo al parsear
 
 Es el principio que gobierna toda la validación:
@@ -223,6 +247,7 @@ Todos estos estuvieron en el código y costaron un bug real. Si aparece uno, es 
 | Llamar `list` a un método | Sombrea el builtin y rompe las anotaciones `list[...]` posteriores | `list_all` |
 | Inventar un límite que Meta no publica | Rechaza en local valores que Meta acepta | No validar, y dejarlo escrito |
 | Paginar solo la primera página | Devuelve listas incompletas en silencio | Seguir `paging.cursors.after` mientras haya `next` |
+| Devolver el `dict` crudo de Meta desde un cliente | El host acaba leyendo la forma de Meta, que es justo lo que esta librería evita | Un modelo, una `list[X]` o un `bool` |
 
 ## Errores
 
@@ -357,6 +382,7 @@ rompen, documentarlos en `MIGRATION.md` con el antes/después.
 
 - [ ] `python scripts/check.py` en verde (formato, lint, mypy strict, tests ≥90 %).
 - [ ] El builder nuevo tiene un test que fija la forma del payload contra la doc de Meta.
+- [ ] Lo que devuelve es un modelo, una `list[X]` o un `bool`; nunca un `dict` crudo.
 - [ ] Los docstrings explican reglas de Meta, no lo que hace el código.
 - [ ] Ningún archivo de funciones supera ~250 líneas, ninguna función ~40.
 - [ ] Nada nuevo en `__all__` sin exportar también en el `__init__.py` del módulo.

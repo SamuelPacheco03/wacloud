@@ -2,6 +2,48 @@
 
 Los cambios que rompen, versión a versión. La más reciente arriba.
 
+## 0.9 → 0.10
+
+Tres métodos cambian lo que devuelven. Si tu host leía el `dict` que daban, deja de
+compilar —o peor, deja de funcionar en silencio si lo leías con `.get()`—.
+
+### `edit`, `delete` y `mark_read` devuelven `bool`
+
+Los tres devolvían `dict[str, Any]`: el cuerpo crudo de Meta, que en los tres casos es un
+acuse `{"success": true}`. Ahora devuelven si Meta lo aceptó.
+
+| Método | Antes | Ahora |
+|---|---|---|
+| `TemplatesClient.edit` | `dict[str, Any]` | `bool` |
+| `TemplatesClient.delete` | `dict[str, Any]` | `bool` |
+| `MessagesClient.mark_read` | `dict[str, Any]` | `bool` |
+
+**Qué hacer.** Quitar la lectura del diccionario:
+
+```python
+# Antes
+resultado = await templates.delete(waba_id, name="recibo")
+if resultado.get("success"):
+    ...
+
+# Ahora
+if await templates.delete(waba_id, name="recibo"):
+    ...
+```
+
+**Por qué.** Un cliente que devuelve el `dict` de Meta obliga al host a leer el esquema de
+Meta para saber si algo salió bien, que es justo lo que esta librería existe para evitar, y
+lo ata a una forma que Meta cambia entre versiones. El coste se vio aguas abajo: el gateway
+que consume la librería acabó inventándose un campo distinto en cada ruta —`updated` en la
+edición, `deleted` en el borrado— porque no había nada normalizado que traducir; y como el
+`dict` no le decía nada útil, lo tiraba y respondía `True` a pelo, sin leer la respuesta de
+Meta en ningún momento.
+
+Las otras ocho operaciones —`subscribe`, `unsubscribe`, `register`, `deregister`,
+`set_two_step_pin`, `request_verification_code`, `verify_code`, `update_profile`— ya
+devolvían `bool` y no cambian. Para el detalle que no cabe en un booleano sigue estando
+`raw` dentro de los modelos.
+
 ## 0.6 → 0.7
 
 Ningún cambio de firma: nada deja de compilar. Lo que cambia es **cuándo se reintenta un

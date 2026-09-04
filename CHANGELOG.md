@@ -6,6 +6,29 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.10.0] — 2026-09-03
+
+### Cambiado (rompe)
+
+- **`TemplatesClient.edit`, `TemplatesClient.delete` y `MessagesClient.mark_read` devuelven
+  `bool`** en vez del `dict` crudo de Meta. Los tres respondían un acuse `{"success": true}`,
+  así que lo único que aportaba el diccionario era obligar al host a leer la forma de Meta.
+  Ver `MIGRATION.md`.
+
+  Eran las tres únicas excepciones de los 40 métodos públicos: el resto ya devolvía un
+  modelo, una `list[X]` o un `bool`.
+
+### Añadido
+
+- **La convención de retorno, escrita** en `CLAUDE.md`: un recurso es un modelo tipado, una
+  colección es una `list[X]` ya paginada entera, y una operación es un `bool`. Un cliente
+  nunca devuelve el `dict` crudo de Meta.
+
+- **`tests/test_contrato.py`**, que la comprueba recorriendo las clases de verdad, así que
+  un método nuevo entra solo. Es la diferencia entre una costumbre y un contrato: la regla
+  se cumplía en 37 de 40 métodos y las tres excepciones sobrevivieron varias versiones sin
+  que nada se quejara.
+
 ## [0.9.0] — 2026-09-02
 
 ### Añadido

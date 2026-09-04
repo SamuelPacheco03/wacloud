@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from tests.factories import make_resolver, make_transport
+from tests.factories import make_resolver, make_transport, ok_handler
 from wacloud.messages import MessagesClient
 from wacloud.templates import TemplatesClient, builders
 
@@ -125,7 +125,7 @@ async def test_delete_sends_name_param():
 
     templates, _ = _clients(handler)
     out = await templates.delete("WABA", name="recibo")
-    assert out["success"] is True
+    assert out is True
     assert captured["method"] == "DELETE"
     assert "name=recibo" in captured["url"]
 
@@ -276,3 +276,27 @@ async def test_get_filters_by_language():
     templates, _ = _clients(handler)
     found = await templates.get("WABA", "saludo", language="es_ES")
     assert found.status == "PENDING"
+
+
+# --- Una operación devuelve un booleano, no el cuerpo de Meta ----------------
+
+
+async def test_edit_returns_whether_meta_accepted_it():
+    """Meta contesta un acuse, no la plantilla editada: cabe en un booleano.
+
+    Devolver el `dict` crudo dejaba al host leyendo la forma de Meta —y al gateway
+    inventándose un `updated: true` que no leía de ninguna parte—.
+    """
+    templates, _ = _clients(ok_handler({"success": True}))
+    assert await templates.edit("TID", waba_id="WABA", category="MARKETING") is True
+
+
+async def test_an_edit_meta_did_not_accept_is_false():
+    """Meta puede contestar 200 con `success: false`: eso no es un éxito."""
+    templates, _ = _clients(ok_handler({"success": False}))
+    assert await templates.edit("TID", waba_id="WABA", category="MARKETING") is False
+
+
+async def test_a_delete_without_success_is_false():
+    templates, _ = _clients(ok_handler({}))
+    assert await templates.delete("WABA", name="recibo") is False

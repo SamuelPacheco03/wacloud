@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from tests.factories import make_messages_client, make_transport
+from tests.factories import make_messages_client, make_transport, ok_handler
 from wacloud.messages import MessagesClient, builders
 
 # --- Builders (puros, sin red) ---------------------------------------------
@@ -166,7 +166,8 @@ async def test_mark_read_posts_status_payload():
         return httpx.Response(200, json={"success": True})
 
     client = _client(handler)
-    await client.mark_read(phone_number_id="PNID", message_id="wamid.X")
+    accepted = await client.mark_read(phone_number_id="PNID", message_id="wamid.X")
+    assert accepted is True
     assert captured["body"]["status"] == "read"
     assert captured["body"]["typing_indicator"] == {"type": "text"}
 
@@ -223,3 +224,9 @@ async def test_send_payload_without_callback_data_omits_the_field():
         builders.build_text("573000000000", "hola"), phone_number_id="PNID"
     )
     assert "biz_opaque_callback_data" not in sent
+
+
+async def test_mark_read_that_meta_did_not_accept_is_false():
+    """Devuelve si Meta lo aceptó, no su cuerpo: un 200 con `success: false` no lo es."""
+    client = _client(ok_handler({"success": False}))
+    assert await client.mark_read(phone_number_id="PNID", message_id="wamid.X") is False
