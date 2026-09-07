@@ -202,7 +202,13 @@ if message.requested_phone:
 `requested_phone` solo se rellena cuando la tarjeta vino del botón (`origin:
 "contact_request"`). Si el usuario compartió una tarjeta por su cuenta devuelve `None`, y
 no es un detalle: ese número puede ser el de otra persona, y darlo por suyo le asignaría a
-un cliente el teléfono de un tercero. Las tarjetas completas están en `contact_cards`, ya
+un cliente el teléfono de un tercero.
+
+> **No lo guardes como «verificado».** `contact_request` prueba que el flujo fue nuestro,
+> no que el número sea de quien lo comparte: Meta no documenta si en esa pantalla el
+> usuario puede elegir otro contacto o teclear otro número. Hasta confirmarlo contra una
+> cuenta real, trátalo como un número **declarado**. Marcarlo como verificado sin serlo es
+> peor que pedirlo a mano, porque después nadie vuelve a dudar de ese dato. Las tarjetas completas están en `contact_cards`, ya
 desanidadas:
 
 ```python

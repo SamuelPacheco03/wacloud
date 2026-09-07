@@ -597,3 +597,4 @@ correspondiente y borrar la fila de esta tabla:
 | Límites del perfil de negocio | `numbers/client.py` | La página de Meta devuelve error. No se validan. |
 | Regex de parámetros con nombre | `templates/placeholders.py` | Meta lo describe en prosa; no está claro si admite dígitos. |
 | Campo `recipient` para un BSUID | `recipient.py` | La página de BSUID lo documenta con ejemplo; la referencia del endpoint `/messages` no lo lista. Se sigue la primera. |
+| ¿Puede el usuario cambiar el número al compartirlo? | `webhook/events.py` | Decide si `requested_phone` vale como número **verificado** o solo declarado. Meta no lo documenta. Se resuelve pulsando el botón desde una cuenta real y viendo si deja elegir otro contacto o teclear otro número. Hasta entonces, no tratarlo como verificado. |
