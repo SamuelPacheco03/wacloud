@@ -174,6 +174,12 @@ class WebhookInboundMessage:
 
         ``None`` si la tarjeta la compartió por su cuenta: ese número puede ser el de
         otra persona y darlo por suyo asociaría a un cliente el teléfono de un tercero.
+
+        **No es un número verificado.** Responde "¿vino de nuestro botón?", no "¿es
+        suyo?": Meta no documenta si dentro de esa pantalla el usuario puede elegir otro
+        contacto o teclear otro número. Guardarlo como verificado sin comprobarlo es peor
+        que pedirlo a mano, porque nadie vuelve a dudar de un dato marcado así. Ver la
+        tabla de pendientes de ``CLAUDE.md``.
         """
         for card in self.contact_cards:
             if card.from_contact_request:
