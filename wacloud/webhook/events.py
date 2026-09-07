@@ -87,6 +87,13 @@ class InboundInteractive:
 @dataclass(frozen=True)
 class WebhookInboundMessage:
     phone_number_id: str
+    #: Identificador con el que **responder**: el teléfono si Meta lo mandó y, si no,
+    #: el BSUID. Nunca viene vacío, y ``recipient_block`` acepta cualquiera de los dos,
+    #: así que ``send_text(msg.from_user, ...)`` sigue funcionando en ambos casos.
+    #:
+    #: Ojo al guardarlo: **no siempre es un teléfono**. Para la columna del teléfono
+    #: está ``from_phone``, que es ``None`` cuando Meta no lo manda; meter aquí un
+    #: ``digits_only`` convertiría ``CO.2452497711827233`` en un número inventado.
     from_user: str
     message_id: str | None
     type: str
@@ -107,6 +114,24 @@ class WebhookInboundMessage:
     #: Tarjetas de contacto que envió el usuario (mensajes de tipo ``contacts``).
     #: Distinto de ``contacts``, que es el perfil de **quien escribe**.
     shared_contacts: list[dict[str, Any]] = field(default_factory=list)
+    #: BSUID de quien escribe (``messages[].from_user_id``). Meta lo manda **siempre**,
+    #: tenga el usuario nombre de usuario o no, así que es el identificador estable.
+    from_user_id: str | None = None
+    #: Teléfono de quien escribe (``messages[].from``), **solo si Meta lo mandó**.
+    #: Desaparece cuando el usuario tiene username y además no ha escrito a este número
+    #: en 30 días, no está en su agenda, o el negocio le escribió al BSUID.
+    from_phone: str | None = None
+    #: ``contacts[].profile.username``, si el usuario tiene nombre de usuario.
+    username: str | None = None
+
+    @property
+    def has_phone_number(self) -> bool:
+        """¿Se conoce el teléfono, o solo la identidad de negocio?
+
+        Un hilo sin teléfono se puede seguir respondiendo por la Cloud API, pero no se
+        puede cruzar con un CRM que indexe por número.
+        """
+        return self.from_phone is not None
 
     @property
     def media_id(self) -> str | None:
@@ -136,6 +161,10 @@ class WebhookStatus:
     pricing_category: str | None = None
     #: Dato opaco que el host adjuntó al enviar, para correlacionar.
     callback_data: str | None = None
+    #: BSUID del destinatario (``statuses[].recipient_user_id``). Meta lo pone siempre,
+    #: se haya enviado el mensaje al teléfono o al BSUID; ``recipient_id`` en cambio
+    #: puede faltar, por las mismas razones que ``from`` en un mensaje entrante.
+    recipient_user_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +195,27 @@ class WebhookTemplateStatus:
 
 
 @dataclass(frozen=True)
+class WebhookDiscarded:
+    """Elemento del payload que el parser no supo convertir en un evento.
+
+    Existe porque «lote vacío» y «lote perdido» se veían **exactamente igual** desde
+    fuera: el parser descartaba en silencio y no quedaba ni una línea de rastro. Un
+    descarte no es un error —Meta manda cosas que aún no interpretamos, y tumbar el lote
+    entero sería peor— pero tiene que ser contable.
+
+    ``kind`` es qué se descartó (``message``, ``status``, ``template_status``,
+    ``change``) y ``reason`` por qué, con un código estable para poder alertar sin
+    parsear prosa. ``raw`` es el fragmento tal cual, para poder reprocesarlo.
+    """
+
+    kind: str
+    reason: str
+    raw: dict[str, Any]
+    phone_number_id: str | None = None
+    waba_id: str | None = None
+
+
+@dataclass(frozen=True)
 class WebhookEvents:
     messages: list[WebhookInboundMessage] = field(default_factory=list)
     statuses: list[WebhookStatus] = field(default_factory=list)
@@ -173,3 +223,6 @@ class WebhookEvents:
     #: la misma suscripción que los mensajes, pero no tienen nada que ver con ninguna
     #: conversación: son la respuesta de la revisión de Meta.
     template_statuses: list[WebhookTemplateStatus] = field(default_factory=list)
+    #: Lo que llegó y no se pudo normalizar. Vacío en el caso normal. Revisarlo —o al
+    #: menos contarlo— es la única forma de enterarse de que algo se está perdiendo.
+    discarded: list[WebhookDiscarded] = field(default_factory=list)

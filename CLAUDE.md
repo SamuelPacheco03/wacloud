@@ -47,6 +47,7 @@ Confundirlos produce errores que no dicen cuál es el problema.
 | `wamid` | Un mensaje concreto (`wamid.HBg...`) | Responder, reaccionar, marcar leído |
 | `media_id` | Un medio subido a la Media API | **Enviar** medios y plantillas |
 | `handle` | Un medio subido a la Resumable Upload API (`4::aW1h...`) | **Crear** plantillas con cabecera |
+| `user_id` / `from_user_id` | El **BSUID**: la identidad usuario-negocio (`CO.24524977…`) | Enviar y bloquear cuando no hay teléfono |
 | `flow_token` | Referencia propia que viaja al Flow y vuelve | Correlacionar la respuesta de un Flow |
 | `app_secret` | El secreto de la app de Meta | Firmar webhooks (host) y canjear el código de signup |
 | `code` | Código de un solo uso del popup de Embedded Signup | Canjearlo por el token de negocio |
@@ -131,8 +132,9 @@ son testables sin mocks; los clients se testean con `httpx.MockTransport`.
 CTA, lista, Flow), ubicación, contactos, stickers, reacciones y respuestas citadas. Ciclo
 de vida completo de plantillas (crear con validación local, editar, listar con paginación,
 borrar) y los 11 tipos de botón. Subida de medios por los dos sistemas. Webhook entrante
-normalizado. Gestión del número, lista de bloqueo, suscripción de la app a una WABA y canje de
-Embedded Signup.
+normalizado, con los descartes contabilizados en vez de silenciosos. Nombres de usuario y BSUID,
+de punta a punta: parseo, envío y bloqueo. Gestión del número, lista de bloqueo, suscripción de la
+app a una WABA y canje de Embedded Signup.
 
 **Falta.** Mensajes de catálogo y producto (necesitan un catálogo de Commerce Manager) y
 los webhooks de gestión `account_update` y `phone_number_quality_update`, que hoy hay que
@@ -469,6 +471,39 @@ la cabecera (Meta aprueba `"Pedido {{1}}"`), y la creencia de que dos variables 
 ser adyacentes no se valida porque no aparece en ninguna página de Meta. Ser más estricto
 que Meta bloquea plantillas legítimas.
 
+## Nombres de usuario: el teléfono es lo condicional
+
+Desde que WhatsApp permite nombres de usuario, un mensaje entrante **puede llegar sin
+teléfono**. Meta omite `wa_id` y `from`, y manda solo el **BSUID** —*business-scoped user
+ID*, la identidad de esa persona **para ese negocio**: `CO.2452497711827233`—. Ocurre
+cuando el usuario tiene username y además se cumple alguna de estas: no ha escrito a ese
+número en 30 días, no está en la agenda del negocio, o el negocio le escribió al BSUID.
+
+Lo que hay que tener grabado es la asimetría: **`user_id` viene siempre**, tenga el usuario
+nombre de usuario o no; el teléfono es lo que puede faltar. Cualquier código que trate
+`from` como obligatorio descarta conversaciones enteras, y sin error: es exactamente el bug
+que costó días de mensajes perdidos.
+
+El BSUID se puede usar para enviar, pero **no por el mismo campo**:
+
+| | Teléfono | BSUID |
+|---|---|---|
+| Enviar (`/messages`, `/marketing_messages`) | `to` | `recipient` |
+| Bloquear (`/block_users`) | `user` | `user_id` |
+| Webhook entrante | `from` · `wa_id` | `from_user_id` · `user_id` |
+| Webhook de estado | `recipient_id` | `recipient_user_id` |
+
+Se pueden mandar los dos a la vez; Meta prioriza el teléfono. En esta librería lo resuelve
+`recipient_block` mirando la forma de la cadena —las dos son disjuntas, un teléfono no
+lleva letras ni punto—, así que los catorce builders lo heredan sin un argumento extra.
+
+El BSUID va **entero o no va**: quitarle el país o el punto hace fallar la petición. Por eso
+`normalize_recipient` lo rechaza en vez de pasarlo por `digits_only`, que lo dejaría en
+cifras que no identifican a nadie.
+
+Referencia:
+https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids
+
 ## Errores: ramificar por `error.code`
 
 Meta lo dice explícitamente: construir el manejo de errores sobre **`error.code`**, nunca
@@ -549,3 +584,4 @@ correspondiente y borrar la fila de esta tabla:
 | Default de `product_policy` | `templates/builders.py` | No documentado. Conviene fijarlo explícito. |
 | Límites del perfil de negocio | `numbers/client.py` | La página de Meta devuelve error. No se validan. |
 | Regex de parámetros con nombre | `templates/placeholders.py` | Meta lo describe en prosa; no está claro si admite dígitos. |
+| Campo `recipient` para un BSUID | `recipient.py` | La página de BSUID lo documenta con ejemplo; la referencia del endpoint `/messages` no lo lista. Se sigue la primera. |

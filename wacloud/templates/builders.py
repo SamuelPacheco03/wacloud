@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from wacloud.messages.builders import build_template
-from wacloud.recipient import digits_only
+from wacloud.recipient import digits_only, is_user_id
 
 __all__ = [
     "build_auth_basic",
@@ -106,12 +106,18 @@ def build_marketing_template(
     devuelve el código ``134100``.
 
     Requiere ``to`` y/o ``recipient`` (un BSUID). Si van ambos, Meta prioriza ``to``.
+    Un BSUID pasado en ``to`` se manda por ``recipient``, que es donde lo espera Meta.
 
     ``product_policy`` admite ``CLOUD_API_FALLBACK`` (si el mensaje no es elegible para
     MM, se entrega por Cloud API) o ``STRICT`` (falla en vez de caer de vuelta). Meta no
     documenta cuál es el valor por defecto, así que conviene fijarlo explícitamente
     cuando la entrega por MM debe ser determinista.
     """
+    # Un BSUID en `to` se reencamina en vez de rechazarse: `digits_only` lo dejaría en
+    # sus cifras, que no identifican a nadie, y el host suele pasar tal cual lo que le
+    # llegó en el webhook sin mirar de qué forma es.
+    if is_user_id(to):
+        to, recipient = None, recipient or to
     to_clean = digits_only(to) if to else ""
     recipient_clean = (recipient or "").strip()
     if not to_clean and not recipient_clean:

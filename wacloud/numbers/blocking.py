@@ -18,7 +18,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from wacloud.credentials import CredentialResolver
-from wacloud.recipient import normalize_recipient
+from wacloud.recipient import is_user_id, normalize_recipient
 from wacloud.transport import Transport
 
 #: Meta acepta como mucho 100 usuarios por llamada.
@@ -38,7 +38,10 @@ class BlockResult(BaseModel):
     alguien que Meta rechazó dejaría un agujero silencioso en la moderación.
     """
 
-    #: ``wa_id`` de los que sí se procesaron.
+    #: Identificador de los que sí se procesaron: el ``wa_id`` si Meta lo devolvió y,
+    #: si no, el ``user_id`` (BSUID). Un usuario con nombre de usuario puede no tener
+    #: teléfono asociado en la respuesta, y devolver la lista vacía por eso daría por
+    #: fallido un bloqueo que sí se aplicó.
     succeeded: list[str] = Field(default_factory=list)
     #: Los que Meta rechazó, con su motivo: ``{"input": ..., "reason": ...}``.
     failed: list[dict[str, Any]] = Field(default_factory=list)
@@ -53,9 +56,9 @@ class BlockResult(BaseModel):
         failed = payload.get("failed_users")
         return cls(
             succeeded=[
-                str(item["wa_id"])
+                identifier
                 for item in (added if isinstance(added, list) else [])
-                if isinstance(item, dict) and item.get("wa_id")
+                if isinstance(item, dict) and (identifier := _identifier(item))
             ],
             failed=[
                 i for i in (failed if isinstance(failed, list) else []) if isinstance(i, dict)
@@ -86,7 +89,7 @@ class BlockedUsersClient:
             )
         return {
             "messaging_product": "whatsapp",
-            _BLOCK_USERS: [{"user": normalize_recipient(u)} for u in users],
+            _BLOCK_USERS: [_user_entry(u) for u in users],
         }
 
     async def block(self, phone_number_id: str, users: list[str]) -> BlockResult:
@@ -117,7 +120,11 @@ class BlockedUsersClient:
         return BlockResult.from_meta(response, key="removed_users")
 
     async def list_all(self, phone_number_id: str, *, page_size: int = 100) -> list[str]:
-        """``wa_id`` de todos los usuarios bloqueados, siguiendo la paginación."""
+        """Identificador de todos los bloqueados, siguiendo la paginación.
+
+        ``wa_id`` cuando Meta lo da; el BSUID cuando no, por las mismas razones que en
+        ``BlockResult.succeeded``.
+        """
         credentials = await self._resolver.for_phone_number_id(phone_number_id)
         blocked: list[str] = []
         after: str | None = None
@@ -136,9 +143,9 @@ class BlockedUsersClient:
             data = response.get("data")
             if isinstance(data, list):
                 blocked.extend(
-                    str(item["wa_id"])
+                    identifier
                     for item in data
-                    if isinstance(item, dict) and item.get("wa_id")
+                    if isinstance(item, dict) and (identifier := _identifier(item))
                 )
 
             next_cursor = _next_cursor(response)
@@ -147,6 +154,30 @@ class BlockedUsersClient:
             after = next_cursor
 
         return blocked
+
+
+def _user_entry(value: str) -> dict[str, str]:
+    """Un usuario del lote, por teléfono o por BSUID.
+
+    Meta usa claves distintas —``user`` y ``user_id``— y acepta las dos en la misma
+    llamada. Se elige mirando la forma de la cadena, igual que en ``recipient_block``,
+    para que el host pueda pasar sin más lo que le llegó en el webhook.
+
+    Aviso de Meta: los BSUID *padre* (los de una cartera de negocios) no valen para
+    bloquear ni desbloquear.
+    """
+    if is_user_id(value):
+        return {"user_id": value.strip()}
+    return {"user": normalize_recipient(value)}
+
+
+def _identifier(item: dict[str, Any]) -> str | None:
+    """``wa_id`` si lo hay; si no, el BSUID."""
+    for key in ("wa_id", "user_id"):
+        value = item.get(key)
+        if value:
+            return str(value)
+    return None
 
 
 def _next_cursor(response: dict[str, Any]) -> str | None:

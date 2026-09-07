@@ -2,6 +2,67 @@
 
 Los cambios que rompen, versión a versión. La más reciente arriba.
 
+## 0.10 → 0.11
+
+**No rompe firmas.** Todo lo añadido tiene valor por defecto y `from_user` sigue siendo un
+`str` relleno. Pero cambia *qué* puede llevar dentro, y eso sí puede romper al host.
+
+### `from_user` ya no es siempre un teléfono
+
+Antes, un mensaje sin `from` se descartaba, así que `from_user` era siempre un número. Ese
+descarte era el bug: los usuarios con nombre de usuario llegan identificados solo por su
+BSUID y se perdían enteros. Ahora esos mensajes se entregan, y `from_user` trae el BSUID.
+
+| | Antes | Ahora |
+|---|---|---|
+| Meta manda `from` | el teléfono | el teléfono |
+| Meta **no** manda `from` | *el mensaje no llegaba* | el BSUID: `CO.2452497711827233` |
+
+**Qué sigue funcionando sin tocar nada.** Responder:
+
+```python
+await messages.send_text(msg.from_user, "Hola", phone_number_id=msg.phone_number_id)
+```
+
+`recipient_block` mira la forma de la cadena y manda el BSUID por `recipient` en vez de por
+`to`. No hay que decidir nada en el host.
+
+**Qué hay que revisar.** Cualquier sitio donde `from_user` se trate *como número*:
+
+```python
+# Antes — ahora guarda '2452497711827233', que no es el teléfono de nadie
+guardar_telefono(digits_only(msg.from_user))
+
+# Ahora — None cuando Meta no manda el teléfono, que es la verdad
+guardar_telefono(msg.from_phone)
+```
+
+Lo mismo con validaciones de longitud, prefijos de país o `LIKE '57%'` sobre esa columna.
+`msg.has_phone_number` responde a "¿puedo cruzar este hilo con el CRM?".
+
+### Convivencia durante el despliegue
+
+La forma nueva y la actual conviven sin coordinar versiones:
+
+- `from_user` no cambia de tipo ni se queda vacío: el host viejo sigue leyendo y
+  respondiendo.
+- `from_user_id`, `from_phone`, `username`, `recipient_user_id` y `discarded` son campos
+  nuevos con default: el host viejo los ignora.
+
+El orden recomendado es desplegar la librería primero —así dejan de perderse mensajes— y
+migrar después los sitios que asumen un teléfono.
+
+### `discarded`: revísalo, aunque sea para contarlo
+
+`WebhookEvents.discarded` viene vacío en el caso normal. Si deja de estarlo, algo llegó y
+no se está guardando. Basta con una línea:
+
+```python
+events = parse_webhook(payload)
+for item in events.discarded:
+    log.warning("webhook descartado", kind=item.kind, reason=item.reason, raw=item.raw)
+```
+
 ## 0.9 → 0.10
 
 Tres métodos cambian lo que devuelven. Si tu host leía el `dict` que daban, deja de
