@@ -102,6 +102,8 @@ class ButtonType(str, Enum):
     SPM = "SPM"
     ORDER_DETAILS = "ORDER_DETAILS"
     VOICE_CALL = "VOICE_CALL"
+    #: Pide al usuario compartir su teléfono. Solo en utility y marketing.
+    REQUEST_CONTACT_INFO = "REQUEST_CONTACT_INFO"
 
 
 class OtpType(str, Enum):

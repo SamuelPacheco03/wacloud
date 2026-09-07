@@ -6,6 +6,39 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.12.0] — 2026-09-07
+
+El botón `REQUEST_CONTACT_INFO`. La 0.11.0 hizo que dejaran de perderse los mensajes de
+quien escribe sin teléfono; esta añade la forma **explícita** de pedírselo, que es lo
+único que permite unir el BSUID con un número real.
+
+### Añadido
+
+- **`builders.build_request_contact_info` y `MessagesClient.send_request_contact_info`**:
+  el interactivo `request_contact_info`, que enseña el botón nativo de WhatsApp para
+  compartir el contacto. El botón no se puede personalizar, así que el único texto que se
+  controla es el cuerpo.
+- **`buttons.request_contact_info()` y `ButtonType.REQUEST_CONTACT_INFO`**: el mismo botón
+  dentro de una plantilla. Es el único botón sin `text` de toda la librería, porque Meta
+  no deja ponerle etiqueta. Solo se admite en categorías utility y marketing. No se valida
+  ningún cupo: Meta no publica ninguno.
+- **`WebhookInboundMessage.contact_cards`**: las tarjetas de `shared_contacts` ya
+  desanidadas, en `InboundContactCard` (`phone`, `wa_id`, `origin`, `name`, `vcard`).
+  Antes el teléfono había que sacarlo de `contacts[0]["phones"][0]["wa_id"]`, o sea
+  conociendo la forma de Meta, que es justo lo que esta librería evita.
+- **`WebhookInboundMessage.requested_phone`**: el número que el usuario compartió **porque
+  se lo pedimos**. Es la pieza que une las dos identidades en una línea. Devuelve `None`
+  si la tarjeta la compartió por su cuenta (`origin: "other"`): ese número puede ser el de
+  un tercero, y darlo por suyo asociaría a un cliente el teléfono de otra persona.
+- `CONTACT_ORIGIN_REQUEST` y `CONTACT_ORIGIN_OTHER`, para comparar sin literales sueltos.
+
+### Cambiado
+
+- **El texto de un mensaje `contacts` sin nombre ya no es `[contacto recibido]`**: ahora es
+  el número. Una respuesta al botón no trae nombre —solo teléfono—, así que el marcador
+  genérico escondía precisamente el dato por el que se había preguntado. Cuando la tarjeta
+  sí trae nombre no cambia nada.
+
 ## [0.11.0] — 2026-09-07
 
 Nombres de usuario de WhatsApp. Un usuario con username puede llegar **sin teléfono**, y

@@ -30,6 +30,7 @@ from wacloud.messages.builders.context import as_reply
 from wacloud.messages.builders.interactive import (
     build_interactive_buttons,
     build_interactive_cta_url,
+    build_request_contact_info,
     interactive_message,
 )
 from wacloud.messages.builders.interactive_flow import build_interactive_flow
@@ -71,6 +72,7 @@ __all__ = [
     "list_row",
     "list_section",
     "build_interactive_flow",
+    "build_request_contact_info",
     "FlowMode",
     "interactive_message",
     # Ubicación

@@ -29,6 +29,7 @@ __all__ = [
     "otp",
     "phone_number",
     "quick_reply",
+    "request_contact_info",
     "spm",
     "url",
     "voice_call",
@@ -235,3 +236,24 @@ def call_permission_request(text: str) -> dict[str, Any]:
     forma es la mínima común (tipo + etiqueta). Verificar antes de usarlo en producción.
     """
     return {"type": "REQUEST_CALL_PERMISSION", "text": _label(text)}
+
+
+def request_contact_info() -> dict[str, Any]:
+    """Botón que pide al usuario compartir su teléfono.
+
+    No recibe argumentos y no es un descuido: Meta no deja personalizarlo —ni la
+    etiqueta— así que el botón es solo su tipo, y al **enviar** la plantilla tampoco
+    lleva parámetros. Es el único botón de esta librería sin ``text``.
+
+    Solo se admite en plantillas de categoría **utility** y **marketing**. Meta no
+    publica un tope de cuántos caben, así que aquí no se valida ninguno: inventarlo
+    rechazaría en local plantillas que Meta acepta.
+
+    Al pulsarlo llega un mensaje entrante de tipo ``contacts`` con
+    ``origin: "contact_request"``. El equivalente fuera de plantilla es
+    ``builders.build_request_contact_info``.
+
+    Referencia:
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids
+    """
+    return {"type": ButtonType.REQUEST_CONTACT_INFO.value}

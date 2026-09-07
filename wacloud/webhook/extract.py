@@ -15,6 +15,7 @@ from typing import Any
 
 from wacloud.webhook.events import (
     MEDIA_TYPES,
+    InboundContactCard,
     InboundInteractive,
     InboundLocation,
     InboundMedia,
@@ -91,6 +92,31 @@ def extract_username(contact: dict[str, Any] | None) -> str | None:
     return clean_str(profile.get("username")) if profile else None
 
 
+def contact_card(entry: dict[str, Any]) -> InboundContactCard:
+    """Desanida una tarjeta de ``messages[].contacts[]``.
+
+    Meta mete el teléfono dos niveles adentro y en un array —``phones[0].wa_id``—
+    aunque el caso normal sea uno solo. Se toma el primero: es el que WhatsApp comparte
+    al pulsar el botón, y quedarse con la lista entera devolvería la forma de Meta.
+    """
+    phones = dict_list(entry.get("phones"))
+    first = phones[0] if phones else {}
+    name = as_dict(entry.get("name"))
+    return InboundContactCard(
+        phone=clean_str(first.get("phone")),
+        wa_id=clean_str(first.get("wa_id")),
+        origin=clean_str(entry.get("origin")),
+        name=clean_str(name.get("formatted_name")) if name else None,
+        vcard=clean_str(entry.get("vcard")),
+    )
+
+
+def extract_contact_cards(message: dict[str, Any], msg_type: str) -> list[InboundContactCard]:
+    if msg_type != "contacts":
+        return []
+    return [contact_card(entry) for entry in dict_list(message.get("contacts"))]
+
+
 # -- Extracción del texto según el tipo de mensaje --------------------------------
 
 
@@ -124,14 +150,18 @@ def text_from_location(typed: dict[str, Any]) -> str:
 
 
 def text_from_contacts(message: dict[str, Any]) -> str:
-    """Nombres de las tarjetas de contacto compartidas."""
-    names = []
+    """Nombres de las tarjetas compartidas; si no los hay, los números.
+
+    La respuesta al botón ``REQUEST_CONTACT_INFO`` **no trae nombre**, solo teléfono, y
+    dejarla en ``[contacto recibido]`` escondía justo el dato por el que se pidió.
+    """
+    labels = []
     for entry in dict_list(message.get("contacts")):
-        name = as_dict(entry.get("name"))
-        formatted = clean_str(name.get("formatted_name")) if name else None
-        if formatted:
-            names.append(formatted)
-    return ", ".join(names) if names else "[contacto recibido]"
+        card = contact_card(entry)
+        label = card.name or card.wa_id or card.phone
+        if label:
+            labels.append(label)
+    return ", ".join(labels) if labels else "[contacto recibido]"
 
 
 #: Cómo sacar el texto legible de cada tipo de mensaje. Una tabla en vez de una
