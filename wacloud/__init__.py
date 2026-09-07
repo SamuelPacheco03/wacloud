@@ -61,6 +61,7 @@ from wacloud.templates import (
 from wacloud.transport import Transport
 from wacloud.waba import BusinessToken, SubscribedApp, WabaClient, WabaInfo
 from wacloud.webhook import (
+    InboundContactCard,
     WebhookDiscarded,
     WebhookEvents,
     WebhookInboundMessage,
@@ -72,7 +73,7 @@ from wacloud.webhook import (
     verify_subscription,
 )
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 __all__ = [
     # Configuración y transporte
@@ -139,6 +140,7 @@ __all__ = [
     "verify_subscription",
     "parse_webhook",
     "first_phone_number_id",
+    "InboundContactCard",
     "WebhookDiscarded",
     "WebhookEvents",
     "WebhookInboundMessage",

@@ -1,11 +1,16 @@
 """Webhook entrante: verificación de suscripción y firma + parser del payload."""
 
+from wacloud.webhook.events import (
+    CONTACT_ORIGIN_OTHER,
+    CONTACT_ORIGIN_REQUEST,
+)
 from wacloud.webhook.parser import (
     DISCARD_MALFORMED_CHANGE,
     DISCARD_NO_PHONE_NUMBER_ID,
     DISCARD_NO_SENDER,
     DISCARD_NO_STATUS_FIELDS,
     DISCARD_NO_TEMPLATE_EVENT,
+    InboundContactCard,
     InboundInteractive,
     InboundLocation,
     InboundMedia,
@@ -30,10 +35,13 @@ __all__ = [
     "WebhookInboundMessage",
     "WebhookStatus",
     "WebhookTemplateStatus",
+    "InboundContactCard",
     "InboundInteractive",
     "InboundLocation",
     "InboundMedia",
     "InboundReaction",
+    "CONTACT_ORIGIN_OTHER",
+    "CONTACT_ORIGIN_REQUEST",
     "DISCARD_MALFORMED_CHANGE",
     "DISCARD_NO_PHONE_NUMBER_ID",
     "DISCARD_NO_SENDER",

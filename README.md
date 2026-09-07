@@ -174,6 +174,42 @@ Al guardar, ojo con `from_user`: **no siempre es un teléfono**. Para la columna
 teléfono está `from_phone`, que es `None` cuando Meta no lo manda; un `digits_only` sobre
 `from_user` convertiría `CO.2452497711827233` en un número que no es de nadie.
 
+### Pedir el teléfono a quien no lo manda
+
+Meta tiene un botón nativo para esto, y es la única vía documentada. Se puede mandar suelto
+o como botón de una plantilla (solo utility y marketing):
+
+```python
+await messages.send_request_contact_info(
+    message.from_user,                       # funciona con el BSUID
+    "Para gestionar tu domicilio necesitamos un número de contacto 📱",
+    phone_number_id=message.phone_number_id,
+)
+
+components.buttons([buttons.request_contact_info()])   # dentro de una plantilla
+```
+
+El botón **no se puede personalizar** —ni la etiqueta—, así que el único texto que controlas
+es el cuerpo. Es también el único botón de la librería sin `text`.
+
+Al pulsarlo llega un mensaje `contacts` y ahí se unen las dos identidades:
+
+```python
+if message.requested_phone:
+    unir(bsuid=message.from_user_id, telefono=message.requested_phone)
+```
+
+`requested_phone` solo se rellena cuando la tarjeta vino del botón (`origin:
+"contact_request"`). Si el usuario compartió una tarjeta por su cuenta devuelve `None`, y
+no es un detalle: ese número puede ser el de otra persona, y darlo por suyo le asignaría a
+un cliente el teléfono de un tercero. Las tarjetas completas están en `contact_cards`, ya
+desanidadas:
+
+```python
+for card in message.contact_cards:
+    card.wa_id, card.name, card.origin, card.from_contact_request
+```
+
 ### Nada se descarta en silencio
 
 El parser es permisivo a propósito —Meta manda hasta 1000 actualizaciones por POST y añade

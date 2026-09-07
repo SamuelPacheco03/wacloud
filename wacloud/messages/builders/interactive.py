@@ -1,4 +1,4 @@
-"""Mensajes interactivos: botones de respuesta rápida y botón CTA con URL."""
+"""Mensajes interactivos: botones de respuesta rápida, CTA con URL y petición de contacto."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from wacloud.recipient import recipient_block
 __all__ = [
     "build_interactive_buttons",
     "build_interactive_cta_url",
+    "build_request_contact_info",
     "interactive_message",
 ]
 
@@ -113,5 +114,39 @@ def build_interactive_cta_url(
                 "url": str(button_url).strip(),
             },
         },
+    }
+    return interactive_message(to, interactive, header=header, footer=footer)
+
+
+def build_request_contact_info(
+    to: str,
+    body: str,
+    *,
+    header: dict[str, Any] | None = None,
+    footer: str | None = None,
+) -> dict[str, Any]:
+    """Pide al usuario que comparta su teléfono, con el botón nativo de WhatsApp.
+
+    Es la forma **explícita** de conseguir el número de alguien que llegó identificado
+    solo por su BSUID: quien tiene nombre de usuario puede escribir sin que Meta mande
+    el teléfono, y esta es la única vía documentada para pedirlo.
+
+    Al pulsarlo, WhatsApp comparte el número en el hilo y llega un mensaje entrante de
+    tipo ``contacts`` con ``origin: "contact_request"``, que es lo que distingue esta
+    respuesta de una tarjeta que el usuario comparta por su cuenta. Ver
+    ``WebhookInboundMessage.requested_phone``.
+
+    El botón **no se puede personalizar**: no lleva etiqueta ni parámetros, así que el
+    único texto que se controla es el cuerpo. Nótese la duplicación de ``name`` dentro
+    de ``action``, que Meta exige aunque repita el ``type`` —misma forma que ``cta_url``—.
+
+    Referencia:
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids
+    """
+    ensure_max_length(body, InteractiveLimits.BODY, field="interactive.body")
+    interactive: dict[str, Any] = {
+        "type": "request_contact_info",
+        "body": {"text": body},
+        "action": {"name": "request_contact_info"},
     }
     return interactive_message(to, interactive, header=header, footer=footer)

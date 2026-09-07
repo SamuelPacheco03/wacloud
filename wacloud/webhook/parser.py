@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from wacloud.webhook.events import (
+    InboundContactCard,
     InboundInteractive,
     InboundLocation,
     InboundMedia,
@@ -33,6 +34,7 @@ from wacloud.webhook.extract import (
     as_id,
     clean_str,
     dict_list,
+    extract_contact_cards,
     extract_interactive,
     extract_media,
     extract_replied_to,
@@ -104,6 +106,7 @@ def _build_message(
         reaction=_reaction(message, msg_type),
         interactive=extract_interactive(message, msg_type),
         shared_contacts=extract_shared_contacts(message, msg_type),
+        contact_cards=extract_contact_cards(message, msg_type),
         from_user_id=from_user_id,
         from_phone=from_phone,
         username=extract_username(
@@ -318,6 +321,7 @@ __all__ = [
     "DISCARD_NO_SENDER",
     "DISCARD_NO_STATUS_FIELDS",
     "DISCARD_NO_TEMPLATE_EVENT",
+    "InboundContactCard",
     "InboundInteractive",
     "InboundLocation",
     "InboundMedia",

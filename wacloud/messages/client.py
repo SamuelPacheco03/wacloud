@@ -259,6 +259,30 @@ class MessagesClient:
             reply_to=reply_to,
         )
 
+    async def send_request_contact_info(
+        self,
+        to: str,
+        body: str,
+        *,
+        phone_number_id: str,
+        header: dict[str, Any] | None = None,
+        footer: str | None = None,
+        reply_to: str | None = None,
+    ) -> SendResult:
+        """Pide al usuario que comparta su teléfono, con el botón nativo de WhatsApp.
+
+        Es la vía documentada para conseguir el número de quien llegó identificado solo
+        por su BSUID. La respuesta llega como un mensaje entrante de tipo ``contacts``
+        con ``origin: "contact_request"``: ver ``WebhookInboundMessage.requested_phone``.
+
+        El botón no admite etiqueta: el único texto que se controla es ``body``.
+        """
+        return await self.send_payload(
+            builders.build_request_contact_info(to, body, header=header, footer=footer),
+            phone_number_id=phone_number_id,
+            reply_to=reply_to,
+        )
+
     async def send_sticker(
         self,
         to: str,

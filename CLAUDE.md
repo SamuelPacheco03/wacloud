@@ -133,8 +133,9 @@ CTA, lista, Flow), ubicación, contactos, stickers, reacciones y respuestas cita
 de vida completo de plantillas (crear con validación local, editar, listar con paginación,
 borrar) y los 11 tipos de botón. Subida de medios por los dos sistemas. Webhook entrante
 normalizado, con los descartes contabilizados en vez de silenciosos. Nombres de usuario y BSUID,
-de punta a punta: parseo, envío y bloqueo. Gestión del número, lista de bloqueo, suscripción de la
-app a una WABA y canje de Embedded Signup.
+de punta a punta: parseo, envío y bloqueo, más el botón `REQUEST_CONTACT_INFO` para pedir el
+teléfono a quien no lo manda. Gestión del número, lista de bloqueo, suscripción de la app a
+una WABA y canje de Embedded Signup.
 
 **Falta.** Mensajes de catálogo y producto (necesitan un catálogo de Commerce Manager) y
 los webhooks de gestión `account_update` y `phone_number_quality_update`, que hoy hay que
@@ -500,6 +501,17 @@ lleva letras ni punto—, así que los catorce builders lo heredan sin un argume
 El BSUID va **entero o no va**: quitarle el país o el punto hace fallar la petición. Por eso
 `normalize_recipient` lo rechaza en vez de pasarlo por `digits_only`, que lo dejaría en
 cifras que no identifican a nadie.
+
+Para conseguir el teléfono hay una sola vía documentada: el botón `REQUEST_CONTACT_INFO`,
+que existe como interactivo (`interactive.type` y `action.name`, ambos con el mismo valor)
+y como botón de plantilla —`{"type": "REQUEST_CONTACT_INFO"}` a secas, sin `text`, porque
+Meta no deja personalizarlo, y solo en utility y marketing—.
+
+La respuesta llega como un mensaje `contacts`, y **`origin` no es decorativo**:
+`contact_request` es el número del propio usuario; `other` es una tarjeta que compartió por
+su cuenta y puede ser la de cualquiera. Tratarlas igual asocia a un cliente el teléfono de
+un tercero, así que `requested_phone` solo mira la primera. Meta además omite el `vcard`
+cuando el origen es `contact_request`.
 
 Referencia:
 https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids

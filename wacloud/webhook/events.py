@@ -84,6 +84,44 @@ class InboundInteractive:
     flow_response: dict[str, Any] | None = None
 
 
+#: ``contacts[].origin`` cuando el usuario respondió al botón REQUEST_CONTACT_INFO.
+CONTACT_ORIGIN_REQUEST = "contact_request"
+
+#: ``contacts[].origin`` cuando compartió una tarjeta por su cuenta.
+CONTACT_ORIGIN_OTHER = "other"
+
+
+@dataclass(frozen=True)
+class InboundContactCard:
+    """Tarjeta de contacto compartida por el usuario, ya desanidada.
+
+    Existe por el botón ``REQUEST_CONTACT_INFO``: es la vía documentada para pedirle el
+    teléfono a quien llegó identificado solo por su BSUID, y sin esto el host tendría
+    que bucear en ``contacts[0]["phones"][0]["wa_id"]`` —o sea, conocer la forma de
+    Meta, que es justo lo que esta librería evita—.
+
+    ``origin`` es lo que separa las dos situaciones, y no da igual cuál sea: una
+    respuesta al botón es el número **del propio usuario**, mientras que una tarjeta
+    compartida a mano puede ser la de cualquiera. Confundirlas asociaría a un cliente el
+    teléfono de un tercero.
+
+    Meta manda el ``vcard`` solo cuando ``origin`` es ``other``: en una respuesta al
+    botón lo omite.
+    """
+
+    phone: str | None = None
+    #: El mismo número en el formato con el que se le puede escribir.
+    wa_id: str | None = None
+    origin: str | None = None
+    name: str | None = None
+    vcard: str | None = None
+
+    @property
+    def from_contact_request(self) -> bool:
+        """¿Vino del botón que pedía el contacto, o la compartió el usuario por su cuenta?"""
+        return self.origin == CONTACT_ORIGIN_REQUEST
+
+
 @dataclass(frozen=True)
 class WebhookInboundMessage:
     phone_number_id: str
@@ -123,6 +161,24 @@ class WebhookInboundMessage:
     from_phone: str | None = None
     #: ``contacts[].profile.username``, si el usuario tiene nombre de usuario.
     username: str | None = None
+    #: Las tarjetas de ``shared_contacts``, ya desanidadas. Misma lista y mismo orden.
+    contact_cards: list[InboundContactCard] = field(default_factory=list)
+
+    @property
+    def requested_phone(self) -> str | None:
+        """Teléfono que el usuario compartió **porque se lo pedimos**.
+
+        Es la pieza que une las dos identidades: quien escribe con nombre de usuario
+        llega sin teléfono, se le manda un ``request_contact_info`` y su respuesta cae
+        aquí, lista para asociarla a ``from_user_id``.
+
+        ``None`` si la tarjeta la compartió por su cuenta: ese número puede ser el de
+        otra persona y darlo por suyo asociaría a un cliente el teléfono de un tercero.
+        """
+        for card in self.contact_cards:
+            if card.from_contact_request:
+                return card.wa_id or card.phone
+        return None
 
     @property
     def has_phone_number(self) -> bool:
