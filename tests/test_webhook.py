@@ -4,6 +4,10 @@ import hashlib
 import hmac
 
 from wacloud.webhook import (
+    DISCARD_MALFORMED_CHANGE,
+    DISCARD_NO_PHONE_NUMBER_ID,
+    DISCARD_NO_STATUS_FIELDS,
+    DISCARD_NO_TEMPLATE_EVENT,
     first_phone_number_id,
     parse_webhook,
     verify_signature,
@@ -510,6 +514,68 @@ def test_template_status_without_event_is_dropped():
         _template_status_payload({"message_template_id": "1", "previous_category": "UTILITY"})
     )
     assert events.template_statuses == []
+    assert [(d.kind, d.reason) for d in events.discarded] == [
+        ("template_status", DISCARD_NO_TEMPLATE_EVENT)
+    ]
+
+
+# --- descartes ---------------------------------------------------------------
+#
+# Descartar sigue siendo lo correcto; hacerlo en silencio no. Un lote vacío y un lote
+# perdido se veían exactamente igual desde fuera, y por eso un fallo estuvo días sin
+# detectarse.
+
+
+def test_a_clean_batch_discards_nothing():
+    assert parse_webhook(_text_payload()).discarded == []
+
+
+def test_a_change_without_value_is_reported():
+    payload = {"entry": [{"id": "WABA123", "changes": [{"field": "messages"}]}]}
+
+    events = parse_webhook(payload)
+
+    assert [(d.kind, d.reason) for d in events.discarded] == [
+        ("change", DISCARD_MALFORMED_CHANGE)
+    ]
+    assert events.discarded[0].waba_id == "WABA123"
+
+
+def test_a_message_without_phone_number_id_is_reported():
+    """Antes se saltaba el bucle entero sin dejar rastro de cuántos mensajes había."""
+    payload = _text_payload()
+    del payload["entry"][0]["changes"][0]["value"]["metadata"]
+
+    events = parse_webhook(payload)
+
+    assert events.messages == []
+    assert [(d.kind, d.reason) for d in events.discarded] == [
+        ("message", DISCARD_NO_PHONE_NUMBER_ID)
+    ]
+
+
+def test_a_status_without_its_key_fields_is_reported():
+    payload = _text_payload()
+    payload["entry"][0]["changes"][0]["value"]["statuses"] = [{"id": "wamid.X"}]
+
+    events = parse_webhook(payload)
+
+    assert events.statuses == []
+    assert [(d.kind, d.reason) for d in events.discarded] == [
+        ("status", DISCARD_NO_STATUS_FIELDS)
+    ]
+    assert events.discarded[0].raw == {"id": "wamid.X"}
+
+
+def test_the_discarded_keeps_the_raw_fragment_so_it_can_be_reprocessed():
+    """El host necesita poder reprocesar, no solo contar."""
+    payload = _text_payload()
+    payload["entry"][0]["changes"][0]["value"]["messages"][0].pop("from")
+
+    discarded = parse_webhook(payload).discarded[0]
+
+    assert discarded.raw["id"] == "wamid.AAA"
+    assert discarded.phone_number_id == "PNID1"
 
 
 def test_template_status_does_not_touch_messages():

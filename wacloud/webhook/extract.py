@@ -55,6 +55,42 @@ def as_id(value: Any) -> str | None:
     return clean_str(value)
 
 
+# -- Identidad de quien escribe ---------------------------------------------------
+
+
+def match_contact(
+    contacts: list[dict[str, Any]], *, wa_id: str | None, user_id: str | None
+) -> dict[str, Any] | None:
+    """Perfil de quien escribe, dentro de ``value.contacts``.
+
+    Se empareja en vez de coger el primero porque un lote puede traer mensajes de
+    varios remitentes en el mismo ``change``. El BSUID se prueba antes que el teléfono
+    porque Meta lo manda siempre, mientras que ``wa_id`` puede faltar.
+
+    Con un solo contacto se devuelve ese aunque no case: Meta ha llegado a mandar el
+    perfil sin el identificador con el que emparejarlo, y perder el nombre por eso
+    sería peor que asumir lo evidente.
+    """
+    for contact in contacts:
+        if user_id and clean_str(contact.get("user_id")) == user_id:
+            return contact
+        if wa_id and clean_str(contact.get("wa_id")) == wa_id:
+            return contact
+    return contacts[0] if len(contacts) == 1 else None
+
+
+def extract_username(contact: dict[str, Any] | None) -> str | None:
+    """``profile.username``: el nombre de usuario de WhatsApp, si el usuario tiene.
+
+    Es lo que hace que el teléfono deje de venir: quien tiene username puede quedar
+    identificado solo por su BSUID.
+    """
+    if contact is None:
+        return None
+    profile = as_dict(contact.get("profile"))
+    return clean_str(profile.get("username")) if profile else None
+
+
 # -- Extracción del texto según el tipo de mensaje --------------------------------
 
 

@@ -38,7 +38,12 @@ from wacloud.numbers import (
     QualityRating,
 )
 from wacloud.oauth import OAuthClient
-from wacloud.recipient import digits_only, normalize_recipient, recipient_block
+from wacloud.recipient import (
+    digits_only,
+    is_user_id,
+    normalize_recipient,
+    recipient_block,
+)
 from wacloud.retry import DEFAULT_RETRY_POLICY, NO_RETRY_POLICY, RetryPolicy
 from wacloud.templates import (
     ButtonType,
@@ -56,6 +61,7 @@ from wacloud.templates import (
 from wacloud.transport import Transport
 from wacloud.waba import BusinessToken, SubscribedApp, WabaClient, WabaInfo
 from wacloud.webhook import (
+    WebhookDiscarded,
     WebhookEvents,
     WebhookInboundMessage,
     WebhookStatus,
@@ -66,7 +72,7 @@ from wacloud.webhook import (
     verify_subscription,
 )
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
 __all__ = [
     # Configuración y transporte
@@ -112,6 +118,7 @@ __all__ = [
     "FlowMode",
     # Destinatario
     "digits_only",
+    "is_user_id",
     "normalize_recipient",
     "recipient_block",
     # Resultados
@@ -132,6 +139,7 @@ __all__ = [
     "verify_subscription",
     "parse_webhook",
     "first_phone_number_id",
+    "WebhookDiscarded",
     "WebhookEvents",
     "WebhookInboundMessage",
     "WebhookStatus",

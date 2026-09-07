@@ -3,6 +3,11 @@
 Meta anida los datos en ``entry[].changes[].value``. Aquí se atraviesa esa estructura
 una sola vez y se delega en ``extract`` la interpretación de cada campo.
 
+Lo que no se puede normalizar **no desaparece**: va a ``WebhookEvents.discarded`` con
+el motivo y el fragmento crudo. Descartar sigue siendo lo correcto —Meta manda cosas
+que aún no interpretamos y tumbar el lote entero sería peor—, pero un lote vacío y un
+lote perdido tienen que distinguirse desde fuera.
+
 Referencia:
 https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks
 """
@@ -17,6 +22,7 @@ from wacloud.webhook.events import (
     InboundLocation,
     InboundMedia,
     InboundReaction,
+    WebhookDiscarded,
     WebhookEvents,
     WebhookInboundMessage,
     WebhookStatus,
@@ -32,6 +38,8 @@ from wacloud.webhook.extract import (
     extract_replied_to,
     extract_shared_contacts,
     extract_text,
+    extract_username,
+    match_contact,
 )
 from wacloud.webhook.extract import (
     extract_location as _location,
@@ -39,6 +47,23 @@ from wacloud.webhook.extract import (
 from wacloud.webhook.extract import (
     extract_reaction as _reaction,
 )
+
+# -- Motivos de descarte ----------------------------------------------------------
+#
+# Códigos estables, no prosa: el host alerta sobre ellos —o los agrupa en una métrica—
+# sin tener que reconocer un mensaje de error que podría cambiar de redacción.
+
+#: El ``change`` no traía un objeto ``value``.
+DISCARD_MALFORMED_CHANGE = "malformed_change"
+#: Sin ``metadata.phone_number_id`` no se sabe qué número recibió el mensaje.
+DISCARD_NO_PHONE_NUMBER_ID = "missing_phone_number_id"
+#: Ni ``from`` ni ``from_user_id``: no hay a quién atribuir el mensaje ni a quién responder.
+DISCARD_NO_SENDER = "missing_sender"
+#: Un estado sin ``id`` o sin ``status`` no dice nada de ningún mensaje.
+DISCARD_NO_STATUS_FIELDS = "missing_status_fields"
+#: Un ``message_template_status_update`` sin ``event``.
+DISCARD_NO_TEMPLATE_EVENT = "missing_template_event"
+
 
 # -- Construcción de eventos ------------------------------------------------------
 
@@ -50,13 +75,22 @@ def _build_message(
     waba_id: str | None,
     contacts: list[dict[str, Any]],
 ) -> WebhookInboundMessage | None:
-    from_user = clean_str(message.get("from"))
-    if not from_user:
+    """Traduce un mensaje entrante al evento normalizado.
+
+    Quien escribe puede venir identificado por teléfono (``from``), por BSUID
+    (``from_user_id``) o por ambos. Basta con uno: exigir el teléfono descartaba los
+    mensajes de usuarios con nombre de usuario, que es justo el caso en el que Meta
+    deja de mandarlo.
+    """
+    from_phone = clean_str(message.get("from"))
+    from_user_id = clean_str(message.get("from_user_id"))
+    sender = from_phone or from_user_id
+    if not sender:
         return None
     msg_type = clean_str(message.get("type")) or "unknown"
     return WebhookInboundMessage(
         phone_number_id=phone_number_id,
-        from_user=from_user,
+        from_user=sender,
         message_id=clean_str(message.get("id")),
         type=msg_type,
         text=extract_text(message, msg_type),
@@ -70,6 +104,11 @@ def _build_message(
         reaction=_reaction(message, msg_type),
         interactive=extract_interactive(message, msg_type),
         shared_contacts=extract_shared_contacts(message, msg_type),
+        from_user_id=from_user_id,
+        from_phone=from_phone,
+        username=extract_username(
+            match_contact(contacts, wa_id=from_phone, user_id=from_user_id)
+        ),
     )
 
 
@@ -109,6 +148,7 @@ def _build_status(
         error_code=code,
         pricing_category=clean_str(pricing.get("category")) if pricing else None,
         callback_data=clean_str(status.get("biz_opaque_callback_data")),
+        recipient_user_id=clean_str(status.get("recipient_user_id")),
     )
 
 
@@ -147,60 +187,113 @@ def _build_template_status(
 # -- Recorrido del payload --------------------------------------------------------
 
 
-def _iter_change_values(
-    payload: dict[str, Any],
-) -> Iterator[tuple[dict[str, Any], str | None, str | None]]:
-    """Recorre ``entry[].changes[]`` devolviendo valor, ``waba_id`` y nombre del campo.
+def _iter_changes(payload: dict[str, Any]) -> Iterator[tuple[dict[str, Any], str | None]]:
+    """Recorre ``entry[].changes[]`` devolviendo cada cambio y su ``waba_id``.
 
     Aislar el recorrido de la interpretación mantiene ``parse_webhook`` plano: la
     estructura anidada de Meta se atraviesa en un sitio y una sola vez.
 
-    El campo viaja con el valor porque una misma suscripción entrega cosas que no se
-    parecen en nada —mensajes de una conversación y el veredicto sobre una plantilla—
-    y es el único dato que dice cuál de las dos es.
+    Devuelve el ``change`` entero y no solo su ``value`` porque quien llama necesita las
+    dos cosas: el ``field`` para saber qué llegó —una misma suscripción entrega mensajes
+    de una conversación y el veredicto sobre una plantilla— y el cambio crudo para poder
+    anotarlo como descarte cuando no trae ``value``.
     """
     for entry in dict_list(payload.get("entry")):
         waba_id = clean_str(entry.get("id"))
         for change in dict_list(entry.get("changes")):
-            value = as_dict(change.get("value"))
-            if value is not None:
-                yield value, waba_id, clean_str(change.get("field"))
+            yield change, waba_id
+
+
+def _collect_conversation(
+    value: dict[str, Any], *, waba_id: str | None, into: WebhookEvents
+) -> None:
+    """Vuelca los mensajes y estados de un ``change`` de conversación."""
+    metadata = as_dict(value.get("metadata"))
+    phone_number_id = clean_str(metadata.get("phone_number_id")) if metadata else None
+    contacts = dict_list(value.get("contacts"))
+
+    for message in dict_list(value.get("messages")):
+        parsed = (
+            _build_message(
+                message,
+                phone_number_id=phone_number_id,
+                waba_id=waba_id,
+                contacts=contacts,
+            )
+            if phone_number_id
+            else None
+        )
+        if parsed:
+            into.messages.append(parsed)
+            continue
+        into.discarded.append(
+            WebhookDiscarded(
+                kind="message",
+                reason=DISCARD_NO_SENDER if phone_number_id else DISCARD_NO_PHONE_NUMBER_ID,
+                raw=message,
+                phone_number_id=phone_number_id,
+                waba_id=waba_id,
+            )
+        )
+
+    for status in dict_list(value.get("statuses")):
+        parsed_status = _build_status(status, phone_number_id=phone_number_id)
+        if parsed_status:
+            into.statuses.append(parsed_status)
+            continue
+        into.discarded.append(
+            WebhookDiscarded(
+                kind="status",
+                reason=DISCARD_NO_STATUS_FIELDS,
+                raw=status,
+                phone_number_id=phone_number_id,
+                waba_id=waba_id,
+            )
+        )
+
+
+def _collect_template_status(
+    value: dict[str, Any], *, waba_id: str | None, into: WebhookEvents
+) -> None:
+    parsed = _build_template_status(value, waba_id=waba_id)
+    if parsed:
+        into.template_statuses.append(parsed)
+        return
+    into.discarded.append(
+        WebhookDiscarded(
+            kind="template_status",
+            reason=DISCARD_NO_TEMPLATE_EVENT,
+            raw=value,
+            waba_id=waba_id,
+        )
+    )
 
 
 def parse_webhook(payload: dict[str, Any]) -> WebhookEvents:
-    """Parsea el payload crudo de Meta en mensajes y estados normalizados."""
-    messages: list[WebhookInboundMessage] = []
-    statuses: list[WebhookStatus] = []
-    template_statuses: list[WebhookTemplateStatus] = []
+    """Parsea el payload crudo de Meta en mensajes y estados normalizados.
 
-    for value, waba_id, field_name in _iter_change_values(payload):
-        if field_name == TEMPLATE_STATUS_FIELD:
-            parsed_template = _build_template_status(value, waba_id=waba_id)
-            if parsed_template:
-                template_statuses.append(parsed_template)
-            continue
+    Nada se pierde en silencio: lo que no se pudo normalizar queda en ``discarded``.
+    """
+    events = WebhookEvents()
 
-        metadata = as_dict(value.get("metadata"))
-        phone_number_id = clean_str(metadata.get("phone_number_id")) if metadata else None
-        contacts = dict_list(value.get("contacts"))
-
-        if phone_number_id:
-            for message in dict_list(value.get("messages")):
-                parsed = _build_message(
-                    message,
-                    phone_number_id=phone_number_id,
+    for change, waba_id in _iter_changes(payload):
+        value = as_dict(change.get("value"))
+        if value is None:
+            events.discarded.append(
+                WebhookDiscarded(
+                    kind="change",
+                    reason=DISCARD_MALFORMED_CHANGE,
+                    raw=change,
                     waba_id=waba_id,
-                    contacts=contacts,
                 )
-                if parsed:
-                    messages.append(parsed)
+            )
+            continue
+        if clean_str(change.get("field")) == TEMPLATE_STATUS_FIELD:
+            _collect_template_status(value, waba_id=waba_id, into=events)
+        else:
+            _collect_conversation(value, waba_id=waba_id, into=events)
 
-        for status in dict_list(value.get("statuses")):
-            parsed_status = _build_status(status, phone_number_id=phone_number_id)
-            if parsed_status:
-                statuses.append(parsed_status)
-
-    return WebhookEvents(messages, statuses, template_statuses)
+    return events
 
 
 def first_phone_number_id(payload: dict[str, Any]) -> str | None:
@@ -209,8 +302,9 @@ def first_phone_number_id(payload: dict[str, Any]) -> str | None:
     El host lo necesita para saber qué ``app_secret`` usar, y eso ocurre antes de poder
     confiar en el contenido del payload.
     """
-    for value, _, _field in _iter_change_values(payload):
-        metadata = as_dict(value.get("metadata"))
+    for change, _waba_id in _iter_changes(payload):
+        value = as_dict(change.get("value"))
+        metadata = as_dict(value.get("metadata")) if value else None
         pnid = clean_str(metadata.get("phone_number_id")) if metadata else None
         if pnid:
             return pnid
@@ -219,10 +313,16 @@ def first_phone_number_id(payload: dict[str, Any]) -> str | None:
 
 #: Reexportados para que ``from wacloud.webhook.parser import ...`` siga funcionando.
 __all__ = [
+    "DISCARD_MALFORMED_CHANGE",
+    "DISCARD_NO_PHONE_NUMBER_ID",
+    "DISCARD_NO_SENDER",
+    "DISCARD_NO_STATUS_FIELDS",
+    "DISCARD_NO_TEMPLATE_EVENT",
     "InboundInteractive",
     "InboundLocation",
     "InboundMedia",
     "InboundReaction",
+    "WebhookDiscarded",
     "WebhookEvents",
     "WebhookInboundMessage",
     "WebhookStatus",

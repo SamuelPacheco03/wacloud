@@ -146,6 +146,51 @@ async def receive(request: Request) -> Response:
 La firma se calcula sobre el **cuerpo crudo en bytes**: reserializar un JSON ya parseado
 cambia el orden de claves y el escapado, y el HMAC deja de cuadrar.
 
+### Nombres de usuario: quien escribe sin teléfono
+
+Desde que WhatsApp permite nombres de usuario, un mensaje entrante **puede no traer
+teléfono**. Meta omite `wa_id` y `from`, e identifica a la persona solo por su BSUID
+(*business-scoped user ID*): `CO.2452497711827233`. Pasa cuando el usuario tiene username
+y además no ha escrito a ese número en 30 días, no está en su agenda, o el negocio le
+escribió al BSUID.
+
+Se puede responder igual. `from_user` trae el teléfono cuando lo hay y el BSUID cuando no,
+y los builders eligen solos el campo que espera Meta —`to` para un teléfono, `recipient`
+para un BSUID—:
+
+```python
+for message in parse_webhook(payload).messages:
+    await messages.send_text(                 # funciona en los dos casos
+        message.from_user, "Ya te atiendo", phone_number_id=message.phone_number_id
+    )
+
+    message.from_user_id      # 'CO.2452497711827233' — Meta lo manda siempre
+    message.from_phone        # el teléfono, o None si no vino
+    message.username          # 'AndrCastillo', si tiene nombre de usuario
+    message.has_phone_number  # False: este hilo no se puede cruzar con un CRM por número
+```
+
+Al guardar, ojo con `from_user`: **no siempre es un teléfono**. Para la columna del
+teléfono está `from_phone`, que es `None` cuando Meta no lo manda; un `digits_only` sobre
+`from_user` convertiría `CO.2452497711827233` en un número que no es de nadie.
+
+### Nada se descarta en silencio
+
+El parser es permisivo a propósito —Meta manda hasta 1000 actualizaciones por POST y añade
+campos entre versiones, así que un elemento con forma inesperada no puede tumbar el lote—,
+pero lo que descarta queda anotado:
+
+```python
+events = parse_webhook(payload)
+for item in events.discarded:
+    log.warning("webhook descartado", kind=item.kind, reason=item.reason, raw=item.raw)
+```
+
+`reason` es un código estable (`missing_sender`, `missing_phone_number_id`,
+`missing_status_fields`, `missing_template_event`, `malformed_change`), no prosa: se puede
+alertar sobre él sin parsear texto. En el caso normal la lista viene vacía; si deja de
+estarlo, algo llegó y no se está guardando.
+
 ### Crear una plantilla
 
 La parte que más rechazos provoca es el campo `example`, cuya forma **no es la misma** en

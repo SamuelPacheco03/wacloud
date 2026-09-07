@@ -6,6 +6,49 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.11.0] — 2026-09-07
+
+Nombres de usuario de WhatsApp. Un usuario con username puede llegar **sin teléfono**, y
+el parser lo descartaba entero y en silencio: se perdieron conversaciones durante días sin
+dejar una línea de log.
+
+### Corregido
+
+- **El parser ya no exige `from`.** Un mensaje identificado solo por `from_user_id` —el
+  BSUID, `CO.2452497711827233`— se parsea igual. Meta omite `wa_id` y `from` cuando el
+  usuario tiene nombre de usuario y además no ha escrito a ese número en 30 días, no está
+  en la agenda, o el negocio le escribió al BSUID. `from_user_id`, en cambio, viene
+  siempre.
+- **Un mensaje sin `metadata.phone_number_id` ya no se salta el bucle sin dejar rastro**:
+  se anota como descarte, con el motivo.
+
+### Añadido
+
+- **`WebhookEvents.discarded`.** Lo que el parser no supo normalizar deja de desaparecer:
+  cada `WebhookDiscarded` lleva `kind`, `reason` —un código estable, no prosa— y el `raw`
+  para poder reprocesarlo. Un lote vacío y un lote perdido se veían exactamente igual
+  desde fuera, y ese es el motivo de que el fallo tardara días en detectarse.
+- **Identidad en el evento entrante**: `from_user_id` (el BSUID), `from_phone` (el
+  teléfono, o `None` si Meta no lo mandó), `username` y la propiedad `has_phone_number`.
+- **`WebhookStatus.recipient_user_id`**: el BSUID del destinatario, que Meta pone siempre,
+  se hubiera enviado el mensaje al teléfono o al BSUID.
+- **Envío a un BSUID.** `recipient_block` reconoce la forma `CO.…` y la manda por
+  `recipient` en vez de por `to`, que es donde la espera Meta. Al vivir en `recipient.py`
+  lo heredan los catorce builders sin tocar ninguna firma. Antes, un BSUID en `to` moría
+  con un «tiene 16 dígitos, E.164 permite 15».
+- **Bloqueo por BSUID**: `BlockedUsersClient.block` y `unblock` mandan `user_id` en vez de
+  `user` cuando toca. `succeeded` y `list_all` devuelven el `wa_id` si lo hay y el BSUID si
+  no, en vez de perder la fila.
+- **`is_user_id`**, exportado, para el host que necesite ramificar.
+- Un BSUID pasado en el `to` de `build_marketing_template` se reencamina a `recipient` en
+  vez de quedarse en sus cifras.
+
+### Notas
+
+`from_user` **sigue siendo `str` y sigue viniendo relleno**: es el teléfono cuando lo hay y
+el BSUID cuando no. `send_text(msg.from_user, …)` funciona en los dos casos, así que el
+host puede desplegar sin coordinar el cambio. Ver `MIGRATION.md`.
+
 ## [0.10.1] — 2026-09-03
 
 Solo documentación: **el código es idéntico al de la 0.10.0**. Se publica porque lo que
