@@ -128,13 +128,15 @@ son testables sin mocks; los clients se testean con `httpx.MockTransport`.
 
 ## Estado: qué hay y qué falta
 
-**Cubierto.** Envío de texto, los cinco tipos de medio, los cuatro interactivos (botones,
-CTA, lista, Flow), ubicación, contactos, stickers, reacciones y respuestas citadas. Ciclo
+**Cubierto.** Envío de texto, los cinco tipos de medio, los seis interactivos (botones,
+CTA, lista, Flow y las peticiones de contacto y de ubicación), ubicación, contactos,
+stickers, reacciones y respuestas citadas. Ciclo
 de vida completo de plantillas (crear con validación local, editar, listar con paginación,
 borrar) y los 11 tipos de botón. Subida de medios por los dos sistemas. Webhook entrante
 normalizado, con los descartes contabilizados en vez de silenciosos. Nombres de usuario y BSUID,
 de punta a punta: parseo, envío y bloqueo, más el botón `REQUEST_CONTACT_INFO` para pedir el
-teléfono a quien no lo manda. Gestión del número, lista de bloqueo, suscripción de la app a
+teléfono a quien no lo manda y `location_request_message` para pedir el pin a quien no
+quiere teclear su dirección. Gestión del número, lista de bloqueo, suscripción de la app a
 una WABA y canje de Embedded Signup.
 
 **Falta.** Mensajes de catálogo y producto (necesitan un catálogo de Commerce Manager) y
@@ -597,4 +599,5 @@ correspondiente y borrar la fila de esta tabla:
 | Límites del perfil de negocio | `numbers/client.py` | La página de Meta devuelve error. No se validan. |
 | Regex de parámetros con nombre | `templates/placeholders.py` | Meta lo describe en prosa; no está claro si admite dígitos. |
 | Campo `recipient` para un BSUID | `recipient.py` | La página de BSUID lo documenta con ejemplo; la referencia del endpoint `/messages` no lo lista. Se sigue la primera. |
+| ¿Llega algo de la ubicación **en vivo**? | `webhook/events.py` | Meta no la menciona ni en la referencia del webhook ni en la del interactivo. Se asume que solo entrega el pin del momento de compartirlo y ninguna actualización posterior. Se resuelve compartiendo una ubicación en vivo desde una cuenta real y mirando si llega más de un `location`. |
 | ¿Puede el usuario cambiar el número al compartirlo? | `webhook/events.py` | Decide si `requested_phone` vale como número **verificado** o solo declarado. Meta no lo documenta. Se resuelve pulsando el botón desde una cuenta real y viendo si deja elegir otro contacto o teclear otro número. Hasta entonces, no tratarlo como verificado. |
