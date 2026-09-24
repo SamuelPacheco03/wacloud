@@ -6,6 +6,41 @@ Este proyecto sigue [versionado semántico](https://semver.org/lang/es/).
 `MIGRATION.md` documenta con detalle los cambios que rompen la API y cómo adaptarse;
 aquí queda el resumen por versión.
 
+## [0.13.0] — 2026-09-24
+
+El botón de ubicación. Mismo patrón que el de contacto de la 0.12.0: en vez de hacerle
+teclear la dirección a alguien cuyo teléfono ya sabe dónde está, se le pide un pin.
+
+### Añadido
+
+- **`builders.build_request_location` y `MessagesClient.send_request_location`**: el
+  interactivo `location_request_message`, que enseña el botón nativo de compartir
+  ubicación. **No recibe `header` ni `footer`**, y no es un olvido: es el único
+  interactivo del que Meta documenta que no los admite. Aceptarlos para descartarlos
+  después le mandaría al destinatario algo distinto de lo que el host pidió.
+- **`InboundLocation` se exporta desde la raíz**, como ya lo estaba `InboundContactCard`:
+  quien guarde el punto necesita el tipo para anotarlo.
+
+### Notas
+
+- **El mensaje de ubicación entrante ya se parseaba**, desde la 0.2.0:
+  `WebhookInboundMessage.location` trae `latitude` y `longitude` como números, más `name`,
+  `address` y `url`. No estaba documentado ni tenía tests, y por eso se llegó a creer que
+  caía en `discarded`: no cae, y ahora hay un test que lo fija.
+- Ojo con los dos nombres del payload: el tipo es `location_request_message` pero la
+  acción es `send_location`. En `cta_url` y en `request_contact_info` Meta repite el mismo
+  valor en los dos sitios, así que copiar el patrón de al lado da un payload rechazado.
+- A diferencia de las tarjetas de contacto, Meta **no manda `origin`** en una ubicación:
+  el pin que se pidió y el que el usuario comparte por su cuenta llegan iguales. Aquí no
+  hace falta distinguirlos, porque un pin es el sitio al que apunta y no la identidad de
+  nadie.
+- **No hay equivalente como botón de plantilla.** Meta solo publica `LOCATION` como
+  formato de *cabecera*, que sirve para mandar una ubicación, no para pedirla: el botón
+  vive únicamente dentro de la ventana de 24 h.
+- Meta **no documenta la ubicación en vivo** por webhook. Se entrega el pin del momento de
+  compartirlo y no llegan actualizaciones; queda en la tabla de pendientes de `CLAUDE.md`
+  hasta comprobarlo contra una cuenta real.
+
 ## [0.12.0] — 2026-09-07
 
 El botón `REQUEST_CONTACT_INFO`. La 0.11.0 hizo que dejaran de perderse los mensajes de

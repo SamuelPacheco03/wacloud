@@ -283,6 +283,31 @@ class MessagesClient:
             reply_to=reply_to,
         )
 
+    async def send_request_location(
+        self,
+        to: str,
+        body: str,
+        *,
+        phone_number_id: str,
+        reply_to: str | None = None,
+    ) -> SendResult:
+        """Pide al usuario que comparta su ubicación, con el botón nativo de WhatsApp.
+
+        La respuesta llega como un mensaje entrante de tipo ``location``, con las
+        coordenadas en ``WebhookInboundMessage.location``. Meta no marca si el pin se
+        pidió o si el usuario lo mandó por su cuenta: llegan iguales.
+
+        Sin ``header`` ni ``footer``: es el único interactivo que Meta documenta sin
+        ellos, así que el único texto que se controla es ``body``. Conviene decir en él
+        **para qué** se pide: un botón de ubicación sin motivo delante se parece a lo que
+        hace una estafa, y quien duda no lo pulsa.
+        """
+        return await self.send_payload(
+            builders.build_request_location(to, body),
+            phone_number_id=phone_number_id,
+            reply_to=reply_to,
+        )
+
     async def send_sticker(
         self,
         to: str,

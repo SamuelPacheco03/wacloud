@@ -1,4 +1,4 @@
-"""Mensajes interactivos: botones de respuesta rápida, CTA con URL y petición de contacto."""
+"""Mensajes interactivos: botones de respuesta rápida, CTA con URL y peticiones al usuario."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ __all__ = [
     "build_interactive_buttons",
     "build_interactive_cta_url",
     "build_request_contact_info",
+    "build_request_location",
     "interactive_message",
 ]
 
@@ -24,8 +25,8 @@ def interactive_message(
 ) -> dict[str, Any]:
     """Envuelve un objeto ``interactive`` en el mensaje completo.
 
-    Público porque lo comparten los tres tipos de interactivo (botones, lista y
-    Flow), que viven en módulos distintos.
+    Público porque lo comparten todos los tipos de interactivo —botones, CTA, lista,
+    Flow y las dos peticiones—, que viven en módulos distintos.
     """
     if header:
         interactive["header"] = header
@@ -150,3 +151,38 @@ def build_request_contact_info(
         "action": {"name": "request_contact_info"},
     }
     return interactive_message(to, interactive, header=header, footer=footer)
+
+
+def build_request_location(to: str, body: str) -> dict[str, Any]:
+    """Pide al usuario que comparta su ubicación, con el botón nativo de WhatsApp.
+
+    El gemelo del botón de contacto, y con la misma asimetría: Meta no deja personalizar
+    la etiqueta, así que el único texto que se controla es el cuerpo.
+
+    Ojo a los dos nombres, que aquí **no coinciden**: el tipo es
+    ``location_request_message`` pero la acción es ``send_location``. En ``cta_url`` y en
+    ``request_contact_info`` Meta repite el mismo valor en los dos sitios, así que copiar
+    el patrón de al lado produce un payload que Meta rechaza.
+
+    **No admite cabecera ni pie**, y la ausencia de ``header`` y ``footer`` en la firma es
+    deliberada: es el único interactivo del que Meta lo documenta expresamente. Aceptarlos
+    para descartarlos le mandaría al destinatario algo distinto de lo que el host pidió,
+    sin rastro en ningún log.
+
+    Al pulsarlo, WhatsApp abre la pantalla de compartir ubicación y la respuesta llega
+    como un mensaje entrante de tipo ``location`` (ver ``InboundLocation``). Meta **no
+    marca de dónde vino**: un pin pedido y uno que el usuario manda por su cuenta son
+    indistinguibles, al contrario que las tarjetas de contacto, que sí traen ``origin``.
+    Aquí esa distinción no hace falta —un pin es el sitio al que apunta, no la identidad
+    de nadie—, que es justo lo contrario del caso del teléfono.
+
+    Referencia:
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/location-request-messages
+    """
+    ensure_max_length(body, InteractiveLimits.BODY, field="interactive.body")
+    interactive: dict[str, Any] = {
+        "type": "location_request_message",
+        "body": {"text": body},
+        "action": {"name": "send_location"},
+    }
+    return interactive_message(to, interactive, header=None, footer=None)

@@ -31,6 +31,7 @@ from wacloud.messages.builders.interactive import (
     build_interactive_buttons,
     build_interactive_cta_url,
     build_request_contact_info,
+    build_request_location,
     interactive_message,
 )
 from wacloud.messages.builders.interactive_flow import build_interactive_flow
@@ -73,6 +74,7 @@ __all__ = [
     "list_section",
     "build_interactive_flow",
     "build_request_contact_info",
+    "build_request_location",
     "FlowMode",
     "interactive_message",
     # Ubicación

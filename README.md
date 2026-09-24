@@ -216,6 +216,53 @@ for card in message.contact_cards:
     card.wa_id, card.name, card.origin, card.from_contact_request
 ```
 
+### Pedir la ubicación
+
+El otro botón nativo, con la misma idea: en vez de hacerle teclear la dirección a alguien
+cuyo teléfono ya sabe dónde está, se le pide un pin.
+
+```python
+await messages.send_request_location(
+    message.from_user,
+    "Para calcular el domicilio, compártenos tu ubicación 📍",
+    phone_number_id=message.phone_number_id,
+)
+```
+
+No lleva cabecera ni pie —es el único interactivo del que Meta lo documenta así— y la
+etiqueta del botón tampoco se puede personalizar: el único texto que controlas es el
+cuerpo. Dilo **para qué** se pide; un botón de ubicación sin motivo delante se parece
+demasiado a lo que hace una estafa, y quien duda no lo pulsa.
+
+Es un interactivo suelto, así que solo sale dentro de la ventana de 24 h. No existe el
+equivalente como botón de plantilla: Meta solo publica `LOCATION` como **cabecera**, que
+es para mandar una ubicación, no para pedirla.
+
+La respuesta llega como un mensaje de tipo `location`:
+
+```python
+if message.location:
+    punto = (message.location.latitude, message.location.longitude)   # números, no cadenas
+    message.location.name, message.location.address                   # pueden ser None
+```
+
+Tres cosas del objeto que conviene tener claras:
+
+- **Las coordenadas vienen siempre; `name` y `address` solo si el usuario eligió un sitio
+  del buscador de WhatsApp.** Son texto del proveedor: valen para pintar y para confirmar
+  en voz alta a qué sitio se va, no como dirección que guardar.
+- **Meta no dice si el pin se pidió o lo mandó el usuario por su cuenta.** No hay `origin`
+  como en las tarjetas de contacto, y aquí no hace falta: allí la distinción evitaba
+  asignarle a un cliente el teléfono de un tercero, y un pin no es la identidad de nadie.
+- **Es el pin del momento de compartirlo.** Meta no documenta la ubicación en vivo por
+  webhook y no llega ninguna actualización posterior: esto sirve para saber dónde está
+  alguien, no para seguirlo.
+
+Y una trampa: `text` es la etiqueta legible del mensaje y, cuando no hay nombre del sitio,
+cae en las coordenadas. Sirve para pintar el hilo; el dato se lee de `location`. Meterlo
+en el turno de un modelo es darle un punto por el mismo canal por el que entra lo que
+teclea el usuario, y un punto inventado no falla: manda al domiciliario a otra casa.
+
 ### Nada se descarta en silencio
 
 El parser es permisivo a propósito —Meta manda hasta 1000 actualizaciones por POST y añade
@@ -580,8 +627,9 @@ Cubierto: envío de texto, medios, interactivos (botones y CTA) y plantillas; ci
 completo de plantillas (crear con validación local, editar, listar con paginación, borrar);
 los 11 tipos de botón; subida de medios y Resumable Upload API; webhook completo.
 
-Cubre además ubicación, contactos, stickers, reacciones, respuestas citadas y los cuatro
-tipos de interactivo (botones, CTA, lista y Flow), tanto al enviar como al recibir.
+Cubre además ubicación, contactos, stickers, reacciones, respuestas citadas y los seis
+tipos de interactivo (botones, CTA, lista, Flow y las peticiones de contacto y de
+ubicación), tanto al enviar como al recibir.
 
 Del lado de la administración: gestión del número, lista de bloqueo, suscripción de la app
 a una WABA y canje de Embedded Signup — lo que hace falta para dar de alta a un cliente sin

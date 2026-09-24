@@ -37,6 +37,23 @@ class InboundLocation:
 
     A diferencia del envío, donde Meta documenta las coordenadas como cadena, en el
     webhook llegan como números.
+
+    Las coordenadas vienen siempre; ``name`` y ``address`` **solo si el usuario eligió
+    un sitio del buscador de WhatsApp**, y son texto del proveedor: sirven para pintar y
+    para confirmar en voz alta a qué sitio se va, no como dirección que guardar.
+
+    Llega igual el pin que se pidió con ``build_request_location`` que el que el usuario
+    manda por su cuenta: Meta no manda ningún ``origin`` que los distinga, al contrario
+    que en las tarjetas de contacto. Allí la distinción evitaba asociarle a un cliente el
+    teléfono de un tercero; aquí no hay nada equivalente que proteger, porque un pin es
+    el sitio al que apunta y no la identidad de nadie.
+
+    Es el pin **del momento de compartirlo**. Meta no documenta la ubicación en vivo por
+    webhook y no llega ninguna actualización posterior, así que esto no sirve para seguir
+    a nadie: ver la tabla de pendientes de ``CLAUDE.md``.
+
+    Referencia:
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/location
     """
 
     latitude: float | None = None
